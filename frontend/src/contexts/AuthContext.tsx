@@ -27,6 +27,7 @@ interface AuthContextType {
   register: (email: string, password: string, displayName?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  updateProfile: (profileData: Partial<UserProfile>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -72,11 +73,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLastFetchTime(now);
       
       const response = await authService.getProfile(currentUser.uid);
+      console.log('Profile response:', response);
       
-      if (response.status === 'success' && response.user) {
-        setUserProfile(response.user);
+      if (response.status === 'success') {
+        // Handle both response formats: profile or user field
+        const profileData = response.profile || response.user;
+        if (profileData) {
+          console.log('Setting user profile:', profileData);
+          setUserProfile(profileData);
+        } else {
+          console.warn('No profile data in response');
+          setUserProfile(createMinimalProfile(currentUser));
+        }
       } else {
         // If profile not found, create a minimal profile with Firebase data
+        console.warn('Profile fetch unsuccessful, creating minimal profile');
         setUserProfile(createMinimalProfile(currentUser));
       }
     } catch (error) {
@@ -111,8 +122,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Then authenticate with backend to get the user profile
       try {
         const backendResponse = await authService.login(email, password);
-        if (backendResponse.status === 'success' && backendResponse.user) {
-          setUserProfile(backendResponse.user);
+        console.log('Login backend response:', backendResponse);
+        
+        if (backendResponse.status === 'success') {
+          // Handle both response formats for profile data
+          const profileData = backendResponse.profile || backendResponse.user;
+          if (profileData) {
+            setUserProfile(profileData);
+          } else {
+            await fetchUserProfile(firebaseResult.user);
+          }
         } else {
           await fetchUserProfile(firebaseResult.user);
         }
@@ -195,35 +214,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     try {
       setLoading(true);
+      await authService.logout();
       await signOut(auth);
       setUserProfile(null);
     } catch (error) {
       console.error('Logout error:', error);
-      throw error;
     } finally {
       setLoading(false);
     }
   };
 
-  const refreshProfile = useCallback(async () => {
-    if (!auth.currentUser) return;
-    await fetchUserProfile(auth.currentUser);
-  }, [fetchUserProfile]);
-
-  const value = {
-    user,
-    userProfile,
-    loading,
-    profileLoading,
-    login,
-    register,
-    logout,
-    refreshProfile,
+  const refreshProfile = async () => {
+    if (user) {
+      await fetchUserProfile(user);
+    }
+  };
+  
+  const updateProfile = async (profileData: Partial<UserProfile>) => {
+    if (!user) {
+      throw new Error('User must be logged in to update profile');
+    }
+    
+    try {
+      setProfileLoading(true);
+      await authService.updateProfile(profileData);
+      
+      // Update local profile state
+      setUserProfile(prev => prev ? { ...prev, ...profileData } : null);
+      
+      return;
+    } catch (error) {
+      console.error('Failed to update profile:', error);
+      throw error;
+    } finally {
+      setProfileLoading(false);
+    }
   };
 
   return (
-    <AuthContext.Provider value={value}>
-      {!loading && children}
+    <AuthContext.Provider value={{
+      user,
+      userProfile,
+      loading,
+      profileLoading,
+      login,
+      register,
+      logout,
+      refreshProfile,
+      updateProfile
+    }}>
+      {children}
     </AuthContext.Provider>
   );
 }; 

@@ -1,124 +1,292 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import cv2
-import numpy as np
+import os
+import logging
 import threading
 import time
 from datetime import datetime
-import os
 from dotenv import load_dotenv
+
+# Import local modules
+from utils.database import DatabaseManager
+from models import ModelManager
+from utils.alert_manager import AlertManager
 
 # Load environment variables
 load_dotenv()
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('EDUGuard-Backend')
 
 app = Flask(__name__)
 # Enable CORS for all routes and origins
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# Try to use real Firebase, if it fails, use the mock implementation
-try:
-    import firebase_admin
-    from firebase_admin import auth, firestore
-    
-    # Import the firebase config module
-    import firebase_config
-    
-    # Get Firestore client
-    db = firestore.client()
-    print("Using real Firebase authentication and database")
-    
-except Exception as e:
-    print(f"Warning: Firebase initialization failed: {e}")
-    print("Using mock Firebase implementation for testing")
-    
-    # Import the mock implementation
-    from mock_firebase import auth, firestore
-    db = firestore.client()
-
 # Global variables for monitoring
-is_monitoring = False
-monitoring_thread = None
-predictions_buffer = []
+monitoring_lock = threading.Lock()
+monitoring_instances = {}  # Map of user_id -> monitoring instance
 
-def load_models():
-    # Load your ML models here
-    pass
-
-def process_frame(frame):
-    # Implement your model predictions here
-    predictions = {
-        'model1': 0.0,
-        'model2': 0.0,
-        'model3': 0.0,
-        'model4': 0.0
-    }
-    return predictions
-
-def monitoring_loop():
-    global is_monitoring, predictions_buffer
-    
-    cap = cv2.VideoCapture(0)
-    start_time = time.time()
-    
-    while is_monitoring:
-        ret, frame = cap.read()
-        if not ret:
-            continue
-            
-        predictions = process_frame(frame)
-        predictions_buffer.append(predictions)
+class MonitoringInstance:
+    """Class to manage monitoring for a single user"""
+    def __init__(self, user_id):
+        self.user_id = user_id
+        self.running = False
+        self.frame_count = 0
+        self.monitoring_thread = None
+        self.cap = None
+        self.model_manager = ModelManager()
+        self.db_manager = DatabaseManager(user_id)
+        self.alert_manager = AlertManager(self.db_manager)
+        self.last_alert_check = 0
+        self.alert_check_interval = 15  # seconds
         
-        # Calculate average every 5 minutes
-        if time.time() - start_time >= 300:  # 5 minutes
-            avg_predictions = calculate_averages()
-            send_alert(avg_predictions)
-            predictions_buffer = []
-            start_time = time.time()
-            
-    cap.release()
-
-def calculate_averages():
-    if not predictions_buffer:
-        return None
+    def start(self):
+        """Start the monitoring process"""
+        if self.running:
+            logger.warning(f"Monitoring is already running for user {self.user_id}")
+            return
         
-    avg_predictions = {
-        'model1': np.mean([p['model1'] for p in predictions_buffer]),
-        'model2': np.mean([p['model2'] for p in predictions_buffer]),
-        'model3': np.mean([p['model3'] for p in predictions_buffer]),
-        'model4': np.mean([p['model4'] for p in predictions_buffer])
-    }
-    return avg_predictions
+        logger.info(f"Starting monitoring for user {self.user_id}")
+        self.running = True
+        
+        # Update the database status
+        self.db_manager.update_user_monitoring_status(True)
+        
+        # Start the monitoring thread
+        self.monitoring_thread = threading.Thread(target=self._monitoring_loop)
+        self.monitoring_thread.daemon = True
+        self.monitoring_thread.start()
+        
+    def stop(self):
+        """Stop the monitoring process"""
+        if not self.running:
+            logger.warning(f"Monitoring is not running for user {self.user_id}")
+            return
+        
+        logger.info(f"Stopping monitoring for user {self.user_id}")
+        self.running = False
+        
+        # Update the database status
+        self.db_manager.update_user_monitoring_status(False)
+        
+        # Release the camera if it was initialized
+        if self.cap:
+            self.cap.release()
+            self.cap = None
+    
+    def _init_camera(self):
+        """Initialize the camera."""
+        if self.cap is None:
+            camera_index = 0  # Default camera index
+            self.cap = cv2.VideoCapture(camera_index)
+            
+            # Check if camera opened successfully
+            if not self.cap.isOpened():
+                raise RuntimeError(f"Failed to open camera with index {camera_index}")
+                
+            logger.info(f"Camera initialized with index {camera_index}")
+    
+    def _monitoring_loop(self):
+        """Main monitoring loop"""
+        try:
+            import cv2
+            self._init_camera()
+            
+            last_capture_time = 0
+            capture_interval = 0.1  # seconds
+            
+            while self.running:
+                # Capture at specified interval
+                current_time = time.time()
+                if current_time - last_capture_time < capture_interval:
+                    time.sleep(0.01)  # Small sleep to prevent CPU spin
+                    continue
+                    
+                last_capture_time = current_time
+                
+                # Capture frame from webcam
+                ret, frame = self.cap.read()
+                if not ret or frame is None:
+                    logger.warning("Failed to capture frame")
+                    time.sleep(0.1)
+                    continue
+                    
+                self.frame_count += 1
+                
+                # Process the frame through models
+                predictions = self.model_manager.process_frame(frame)
+                
+                # Save predictions to the database
+                for model_name, prediction in predictions.items():
+                    if prediction:
+                        self.db_manager.save_prediction(model_name, prediction)
+                
+                # Check for alerts periodically
+                if current_time - self.last_alert_check >= self.alert_check_interval:
+                    self.last_alert_check = current_time
+                    self.alert_manager.check_all_alerts()
+                    
+        except Exception as e:
+            logger.error(f"Error in monitoring loop: {str(e)}")
+            self.running = False
 
-def send_alert(predictions):
-    # Implement your alert logic here
-    pass
+def get_user_id_from_request():
+    """Get the user ID from the request headers or parameters"""
+    # Debug log the headers
+    logger.debug(f"Request headers: {request.headers}")
+    
+    # Try to get from query params
+    user_id = request.args.get('userId')
+    if user_id:
+        logger.debug(f"Using user ID from query params: {user_id}")
+        return user_id
+    
+    # Try to get from headers - check for both forms that might be used
+    user_id = request.headers.get('X-User-ID') or request.headers.get('X-User-Id') or request.headers.get('x-user-id')
+    if user_id:
+        logger.debug(f"Using user ID from header: {user_id}")
+        return user_id
+    
+    # Last resort - check Authorization header for Bearer token which might contain user ID
+    auth_header = request.headers.get('Authorization')
+    if auth_header and auth_header.startswith('Bearer '):
+        logger.debug("Found Authorization Bearer token")
+        # In a real implementation, you would validate the token
+        # and extract the user ID from it
+    
+    logger.warning("No user ID found in request")
+    return None
 
-@app.route('/api/start-monitoring', methods=['POST'])
+def get_monitoring_instance(user_id):
+    """Get or create a monitoring instance for a user"""
+    if user_id not in monitoring_instances:
+        monitoring_instances[user_id] = MonitoringInstance(user_id)
+    return monitoring_instances[user_id]
+
+# API Routes
+@app.route('/api/status', methods=['GET'])
+def get_status():
+    """Get the current status of the monitoring application"""
+    user_id = get_user_id_from_request()
+    if not user_id:
+        return jsonify({'error': 'User ID is required'}), 400
+    
+    with monitoring_lock:
+        if user_id in monitoring_instances:
+            instance = monitoring_instances[user_id]
+            status = {
+                'running': instance.running,
+                'frameCount': instance.frame_count,
+                'userId': instance.user_id
+            }
+            return jsonify(status)
+        else:
+            return jsonify({'running': False, 'userId': user_id})
+
+@app.route('/api/start', methods=['POST'])
 def start_monitoring():
-    global is_monitoring, monitoring_thread
+    """Start monitoring for a user"""
+    user_id = get_user_id_from_request()
+    if not user_id:
+        return jsonify({'error': 'User ID is required'}), 400
     
-    if not is_monitoring:
-        is_monitoring = True
-        monitoring_thread = threading.Thread(target=monitoring_loop)
-        monitoring_thread.start()
-        return jsonify({'status': 'success', 'message': 'Monitoring started'})
-    return jsonify({'status': 'error', 'message': 'Monitoring already in progress'})
+    with monitoring_lock:
+        instance = get_monitoring_instance(user_id)
+        if instance.running:
+            return jsonify({'message': 'Monitoring is already running', 'status': 'running'})
+        
+        try:
+            instance.start()
+            return jsonify({'message': 'Monitoring started successfully', 'status': 'running'})
+        except Exception as e:
+            logger.error(f"Failed to start monitoring: {e}")
+            return jsonify({'error': f'Failed to start monitoring: {str(e)}'}), 500
 
-@app.route('/api/stop-monitoring', methods=['POST'])
+@app.route('/api/stop', methods=['POST'])
 def stop_monitoring():
-    global is_monitoring
-    is_monitoring = False
-    if monitoring_thread:
-        monitoring_thread.join()
-    return jsonify({'status': 'success', 'message': 'Monitoring stopped'})
+    """Stop monitoring for a user"""
+    user_id = get_user_id_from_request()
+    if not user_id:
+        return jsonify({'error': 'User ID is required'}), 400
+    
+    with monitoring_lock:
+        if user_id not in monitoring_instances:
+            return jsonify({'message': 'Monitoring is not initialized', 'status': 'stopped'})
+        
+        instance = monitoring_instances[user_id]
+        if not instance.running:
+            return jsonify({'message': 'Monitoring is already stopped', 'status': 'stopped'})
+        
+        try:
+            instance.stop()
+            return jsonify({'message': 'Monitoring stopped successfully', 'status': 'stopped'})
+        except Exception as e:
+            logger.error(f"Failed to stop monitoring: {e}")
+            return jsonify({'error': f'Failed to stop monitoring: {str(e)}'}), 500
+
+@app.route('/api/alerts/recent', methods=['GET'])
+def get_recent_alerts():
+    """Get recent alerts for the user"""
+    user_id = get_user_id_from_request()
+    if not user_id:
+        return jsonify({'error': 'User ID is required'}), 400
+    
+    try:
+        db_manager = DatabaseManager(user_id)
+        # Get the most recent alerts (limit to 20)
+        alerts = db_manager.get_recent_alerts(20)
+        return jsonify(alerts)
+    except Exception as e:
+        logger.error(f"Failed to get alerts: {e}")
+        return jsonify({'error': f'Failed to get alerts: {str(e)}'}), 500
+
+@app.route('/api/predictions/recent', methods=['GET'])
+def get_recent_predictions():
+    """Get recent predictions for a specific model"""
+    user_id = get_user_id_from_request()
+    if not user_id:
+        return jsonify({'error': 'User ID is required'}), 400
+    
+    model_name = request.args.get('model')
+    if not model_name:
+        return jsonify({'error': 'Model name is required'}), 400
+    
+    minutes = int(request.args.get('minutes', '5'))
+    
+    try:
+        db_manager = DatabaseManager(user_id)
+        predictions = db_manager.get_recent_predictions(model_name, minutes=minutes)
+        
+        # Get average if requested
+        include_avg = request.args.get('includeAverage', 'false').lower() == 'true'
+        average = None
+        if include_avg:
+            average = db_manager.calculate_prediction_average(model_name, minutes=minutes)
+        
+        return jsonify({
+            'predictions': predictions,
+            'average': average,
+            'model': model_name,
+            'minutes': minutes
+        })
+    except Exception as e:
+        logger.error(f"Failed to get predictions: {e}")
+        return jsonify({'error': f'Failed to get predictions: {str(e)}'}), 500
 
 @app.route('/api/register', methods=['POST'])
 def register():
+    """Register a new user"""
     data = request.json
     if not data or 'email' not in data or 'password' not in data:
         return jsonify({'status': 'error', 'message': 'Email and password required'}), 400
-        
+    
     try:
+        from firebase_admin import auth
+        
         # Create Firebase user
         try:
             user = auth.create_user(
@@ -134,122 +302,172 @@ def register():
                 'lastLogin': datetime.now().isoformat(),
             }
             
-            # Try to create a user profile document
+            # Create user profile document
             try:
-                db.collection('users').document(user.uid).set(user_data)
+                db_manager = DatabaseManager(user.uid)
+                db_manager.create_user_profile(user_data)
             except Exception as db_error:
-                print(f"Database error during registration: {db_error}")
-                # Continue even if database fails
+                logger.error(f"Database error during registration: {db_error}")
             
             return jsonify({'status': 'success', 'uid': user.uid, 'user': user_data})
         except Exception as auth_error:
-            print(f"Auth error during registration: {auth_error}")
-            # Check if user might already exist
-            try:
-                existing_user = auth.get_user_by_email(data['email'])
-                return jsonify({
-                    'status': 'success', 
-                    'message': 'User already exists',
-                    'uid': existing_user.uid, 
-                    'user': {
-                        'email': existing_user.email,
-                        'displayName': existing_user.display_name or data['email'].split('@')[0]
-                    }
-                })
-            except:
-                pass
+            logger.error(f"Auth error during registration: {auth_error}")
             return jsonify({'status': 'error', 'message': str(auth_error)}), 400
     except Exception as e:
-        print(f"Registration error: {e}")
+        logger.error(f"Registration error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 400
 
 @app.route('/api/login', methods=['POST'])
 def login():
+    """Login a user"""
     data = request.json
     if not data or 'email' not in data or 'password' not in data:
         return jsonify({'status': 'error', 'message': 'Email and password required'}), 400
-        
+    
     try:
-        # In a real implementation, we would verify the password with Firebase Auth
-        # Here we just look up the user
+        from firebase_admin import auth
+        
+        # Verify user credentials using Firebase Auth
         try:
             user = auth.get_user_by_email(data['email'])
             
-            # Get or create user profile data
-            try:
-                user_doc = db.collection('users').document(user.uid).get()
-                user_data = user_doc.to_dict() if user_doc.exists else {
-                    'email': user.email, 
-                    'displayName': user.display_name or user.email.split('@')[0],
-                    'lastLogin': datetime.now().isoformat()
-                }
-                
-                # Update last login time
-                try:
-                    db.collection('users').document(user.uid).update({'lastLogin': datetime.now().isoformat()})
-                except Exception as update_error:
-                    print(f"Error updating last login: {update_error}")
-            except Exception as db_error:
-                print(f"Database error during login: {db_error}")
+            # Get or create user profile
+            db_manager = DatabaseManager(user.uid)
+            user_data = db_manager.get_user_profile()
+            
+            if not user_data:
                 user_data = {
                     'email': user.email,
                     'displayName': user.display_name or user.email.split('@')[0],
                     'lastLogin': datetime.now().isoformat()
                 }
+                db_manager.create_user_profile(user_data)
+            else:
+                # Update last login
+                db_manager.update_user_profile({'lastLogin': datetime.now().isoformat()})
             
             return jsonify({
-                'status': 'success', 
-                'uid': user.uid, 
+                'status': 'success',
+                'uid': user.uid,
                 'user': user_data
             })
         except Exception as auth_error:
-            print(f"Auth error during login: {auth_error}")
-            return jsonify({'status': 'error', 'message': 'Invalid credentials'}), 401
+            logger.error(f"Auth error during login: {auth_error}")
+            return jsonify({'status': 'error', 'message': str(auth_error)}), 401
     except Exception as e:
-        print(f"Login error: {e}")
+        logger.error(f"Login error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/user/profile', methods=['GET'])
 def get_user_profile():
-    uid = request.args.get('uid')
-    if not uid:
-        return jsonify({'status': 'error', 'message': 'User ID required'}), 400
+    """Get a user's profile"""
+    user_id = get_user_id_from_request()
+    logger.info(f"GET /api/user/profile - User ID: {user_id}")
+    
+    if not user_id:
+        logger.error("Profile request missing user ID")
+        return jsonify({'status': 'error', 'message': 'User ID is required'}), 400
     
     try:
-        # Try to get user profile data from database
-        try:
-            user_doc = db.collection('users').document(uid).get()
-            if user_doc.exists:
-                user_data = user_doc.to_dict()
-                return jsonify({
-                    'status': 'success',
-                    'user': user_data
-                })
-        except Exception as db_error:
-            print(f"Database error: {db_error}")
+        db_manager = DatabaseManager(user_id)
+        profile = db_manager.get_user_profile()
+        logger.info(f"Retrieved profile for user {user_id}: {profile}")
         
-        # If database operation fails, return a minimal profile
+        if not profile:
+            logger.warning(f"No profile found for user {user_id}")
+            # Return minimal profile rather than 404 to prevent frontend errors
+            minimal_profile = {
+                'uid': user_id,
+                'email': f"user-{user_id[:6]}@example.com",
+                'displayName': f"User-{user_id[:6]}",
+                'createdAt': datetime.now().isoformat()
+            }
+            # Return both formats for backward compatibility
+            return jsonify({
+                'status': 'success',
+                'profile': minimal_profile,
+                'user': minimal_profile
+            })
+        
+        # Return both formats for backward compatibility
         return jsonify({
             'status': 'success',
-            'user': {
-                'uid': uid,
-                'email': f"user-{uid[:6]}@example.com",
-                'displayName': f"User-{uid[:6]}",
-                'isGenericProfile': True
-            }
+            'profile': profile,
+            'user': profile
         })
     except Exception as e:
-        print(f"Profile retrieval error: {e}")
-        # Even if everything fails, return a success with minimal data to prevent frontend errors
+        logger.error(f"Error getting user profile: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/user/profile', methods=['PUT'])
+def update_user_profile():
+    """Update a user's profile"""
+    user_id = get_user_id_from_request()
+    logger.info(f"PUT /api/user/profile - User ID: {user_id}")
+    
+    if not user_id:
+        logger.error("Profile update missing user ID")
+        return jsonify({'status': 'error', 'message': 'User ID is required'}), 400
+    
+    data = request.json
+    if not data:
+        logger.error(f"No data provided in profile update for user {user_id}")
+        return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+    
+    logger.info(f"Updating profile for user {user_id} with data: {data}")
+    
+    try:
+        db_manager = DatabaseManager(user_id)
+        db_manager.update_user_profile(data)
+        
+        # Get the updated profile to return
+        updated_profile = db_manager.get_user_profile()
+        
         return jsonify({
-            'status': 'success',
-            'user': {
-                'uid': uid,
-                'displayName': 'User',
-                'isGenericProfile': True
-            }
+            'status': 'success', 
+            'message': 'Profile updated',
+            'profile': updated_profile,
+            'user': updated_profile
         })
+    except Exception as e:
+        logger.error(f"Error updating user profile: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
-    load_models()
-    app.run(port=5000, debug=True) 
+    # Set up debug logging
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger.setLevel(logging.DEBUG)
+    
+    # Initialize Firebase
+    try:
+        import firebase_admin
+        from firebase_admin import credentials
+        
+        # Check for service account key
+        service_account_path = os.getenv('FIREBASE_SERVICE_ACCOUNT', 'serviceAccountKey.json')
+        if not os.path.exists(service_account_path):
+            logger.warning(f"Firebase service account key not found at {service_account_path}")
+            logger.warning("Using mock Firebase implementation")
+            from mock_firebase import init_mock_firebase
+            init_mock_firebase()
+        else:
+            # Initialize Firebase with service account
+            cred = credentials.Certificate(service_account_path)
+            firebase_admin.initialize_app(cred)
+            logger.info("Firebase initialized successfully")
+    except Exception as e:
+        logger.error(f"Error initializing Firebase: {e}")
+        logger.warning("Using mock Firebase implementation")
+        from mock_firebase import init_mock_firebase
+        init_mock_firebase()
+    
+    # Start the Flask server
+    host = os.getenv('FLASK_HOST', '0.0.0.0')
+    port = int(os.getenv('FLASK_PORT', '5000'))
+    debug_mode = os.getenv('FLASK_DEBUG', 'true').lower() == 'true'
+    
+    logger.info(f"Starting Flask server on {host}:{port} (Debug mode: {debug_mode})")
+    app.run(host=host, port=port, debug=debug_mode, threaded=True) 
