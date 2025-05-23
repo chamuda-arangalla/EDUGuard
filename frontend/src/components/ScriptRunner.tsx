@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   Button, 
@@ -7,14 +7,27 @@ import {
   Paper, 
   Snackbar, 
   Alert,
-  CircularProgress
+  CircularProgress,
+  Card,
+  CardContent,
+  LinearProgress,
+  Chip,
+  Stack,
+  IconButton,
+  Collapse
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import StopIcon from '@mui/icons-material/Stop';
 import AccessibilityNewIcon from '@mui/icons-material/AccessibilityNew';
 import SentimentDissatisfiedIcon from '@mui/icons-material/SentimentDissatisfied';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import LocalDrinkIcon from '@mui/icons-material/LocalDrink';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
+import WarningIcon from '@mui/icons-material/Warning';
+import { postureService } from '../services/api';
 
 type ScriptColor = 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error';
 
@@ -25,20 +38,191 @@ interface Script {
   icon: React.ReactNode;
   method: () => Promise<any>;
   color: ScriptColor;
+  isEnhanced?: boolean;
+}
+
+interface PostureData {
+  predictions: any[];
+  average: {
+    good_posture_count: number;
+    bad_posture_count: number;
+    good_posture_percentage: number;
+    bad_posture_percentage: number;
+    total_samples: number;
+  } | null;
+  minutes: number;
+}
+
+interface PostureAlert {
+  id: string;
+  type: string;
+  message: string;
+  level: string;
+  timestamp: number;
+  created_at: string;
+  read: boolean;
+  data?: {
+    bad_posture_percentage: number;
+    total_samples: number;
+    good_posture_count: number;
+    bad_posture_count: number;
+  };
 }
 
 const ScriptRunner: React.FC = () => {
   const [loading, setLoading] = useState<number | null>(null);
-  const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const [notification, setNotification] = useState<{message: string, type: 'success' | 'error' | 'warning'} | null>(null);
+  const [postureMonitoring, setPostureMonitoring] = useState(false);
+  const [postureData, setPostureData] = useState<PostureData | null>(null);
+  const [postureAlerts, setPostureAlerts] = useState<PostureAlert[]>([]);
+  const [expandedPosture, setExpandedPosture] = useState(false);
+
+  // Enhanced posture monitoring functions
+  const startPostureMonitoring = async () => {
+    try {
+      const response = await postureService.startMonitoring();
+      if (response.status === 'success') {
+        setPostureMonitoring(true);
+        setNotification({
+          message: 'Enhanced posture monitoring started successfully!',
+          type: 'success'
+        });
+        // Start polling for data
+        startDataPolling();
+      } else {
+        setNotification({
+          message: response.message || 'Failed to start posture monitoring',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      setNotification({
+        message: 'Error starting posture monitoring. Please ensure the backend is running.',
+        type: 'error'
+      });
+    }
+  };
+
+  const stopPostureMonitoring = async () => {
+    try {
+      const response = await postureService.stopMonitoring();
+      if (response.status === 'success') {
+        setPostureMonitoring(false);
+        setNotification({
+          message: 'Posture monitoring stopped successfully!',
+          type: 'success'
+        });
+        // Stop polling
+        stopDataPolling();
+      } else {
+        setNotification({
+          message: response.message || 'Failed to stop posture monitoring',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      setNotification({
+        message: 'Error stopping posture monitoring',
+        type: 'error'
+      });
+    }
+  };
+
+  // Data polling for real-time updates
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
+
+  const startDataPolling = () => {
+    // Poll every 30 seconds for posture data
+    const interval = setInterval(async () => {
+      try {
+        // Get recent posture data
+        const dataResponse = await postureService.getRecentData(5, true);
+        if (dataResponse.status === 'success') {
+          setPostureData(dataResponse.data);
+          
+          // Check for new alerts
+          const alertsResponse = await postureService.getRecentAlerts(10);
+          if (alertsResponse.status === 'success') {
+            const alerts = alertsResponse.data.alerts;
+            setPostureAlerts(alerts);
+            
+            // Show notification for new alerts
+            const recentAlert = alerts.find((alert: PostureAlert) => 
+              !alert.read && new Date(alert.created_at).getTime() > Date.now() - 60000 // Last minute
+            );
+            
+            if (recentAlert) {
+              setNotification({
+                message: recentAlert.message,
+                type: 'warning'
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error polling posture data:', error);
+      }
+    }, 30000);
+    
+    setPollingInterval(interval);
+    
+    // Get initial data immediately
+    setTimeout(async () => {
+      try {
+        const dataResponse = await postureService.getRecentData(5, true);
+        if (dataResponse.status === 'success') {
+          setPostureData(dataResponse.data);
+        }
+        const alertsResponse = await postureService.getRecentAlerts(10);
+        if (alertsResponse.status === 'success') {
+          setPostureAlerts(alertsResponse.data.alerts);
+        }
+      } catch (error) {
+        console.error('Error getting initial posture data:', error);
+      }
+    }, 3000);
+  };
+
+  const stopDataPolling = () => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      setPollingInterval(null);
+    }
+    setPostureData(null);
+    setPostureAlerts([]);
+  };
+
+  // Check monitoring status on component mount
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const response = await postureService.getStatus();
+        if (response.status === 'success' && response.data.is_monitoring) {
+          setPostureMonitoring(true);
+          startDataPolling();
+        }
+      } catch (error) {
+        console.error('Error checking posture monitoring status:', error);
+      }
+    };
+    
+    checkStatus();
+    
+    // Cleanup on unmount
+    return () => {
+      stopDataPolling();
+    };
+  }, []);
 
   const scripts: Script[] = [
     { 
       id: 1, 
-      name: 'Posture Checking', 
-      description: 'Monitors and alerts about poor sitting posture', 
+      name: 'Enhanced Posture Checking', 
+      description: 'Real-time posture monitoring with Firebase integration and smart alerts', 
       icon: <AccessibilityNewIcon />, 
-      method: () => window?.electron?.runScript1(),
-      color: 'primary'
+      method: postureMonitoring ? stopPostureMonitoring : startPostureMonitoring,
+      color: 'primary',
+      isEnhanced: true
     },
     { 
       id: 2, 
@@ -67,6 +251,24 @@ const ScriptRunner: React.FC = () => {
   ];
 
   const runScript = async (id: number, method: () => Promise<any>) => {
+    // Special handling for enhanced posture monitoring
+    if (id === 1) {
+      try {
+        setLoading(id);
+        await method();
+      } catch (error) {
+        console.error(`Error running enhanced posture monitoring:`, error);
+        setNotification({ 
+          message: `Failed to manage posture monitoring: ${(error as Error).message || 'Unknown error'}`, 
+          type: 'error' 
+        });
+      } finally {
+        setLoading(null);
+      }
+      return;
+    }
+    
+    // Original script handling for other scripts
     try {
       setLoading(id);
       const result = await method();
@@ -89,6 +291,14 @@ const ScriptRunner: React.FC = () => {
     setNotification(null);
   };
 
+  const getPostureStatusColor = () => {
+    if (!postureData?.average) return 'default';
+    const badPercentage = postureData.average.bad_posture_percentage;
+    if (badPercentage > 60) return 'error';
+    if (badPercentage > 30) return 'warning';
+    return 'success';
+  };
+
   return (
     <Box>
       <Paper sx={{ p: 3, mb: 3 }}>
@@ -104,11 +314,15 @@ const ScriptRunner: React.FC = () => {
           {scripts.map((script) => (
             <Grid item xs={12} sm={6} key={script.id}>
               <Button
-                variant="outlined"
+                variant={script.id === 1 && postureMonitoring ? "contained" : "outlined"}
                 color={script.color}
                 fullWidth
                 size="large"
-                startIcon={loading === script.id ? <CircularProgress size={20} /> : script.icon}
+                startIcon={
+                  loading === script.id ? 
+                    <CircularProgress size={20} /> : 
+                    script.id === 1 && postureMonitoring ? <StopIcon /> : script.icon
+                }
                 onClick={() => runScript(script.id, script.method)}
                 disabled={loading !== null}
                 sx={{ 
@@ -120,9 +334,21 @@ const ScriptRunner: React.FC = () => {
                   }
                 }}
               >
-                <Box sx={{ textAlign: 'left' }}>
-                  <Typography variant="subtitle1" fontWeight="bold">{script.name}</Typography>
-                  <Typography variant="body2" color="text.secondary">{script.description}</Typography>
+                <Box sx={{ textAlign: 'left', flex: 1 }}>
+                  <Typography variant="subtitle1" fontWeight="bold">
+                    {script.id === 1 ? (postureMonitoring ? 'Stop Posture Monitoring' : script.name) : script.name}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {script.description}
+                  </Typography>
+                  {script.id === 1 && postureMonitoring && (
+                    <Chip 
+                      label="Active" 
+                      color="success" 
+                      size="small" 
+                      sx={{ mt: 0.5 }}
+                    />
+                  )}
                 </Box>
               </Button>
             </Grid>
@@ -137,9 +363,114 @@ const ScriptRunner: React.FC = () => {
         </Box>
       </Paper>
 
+      {/* Enhanced Posture Monitoring Dashboard */}
+      {postureMonitoring && (
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <AccessibilityNewIcon color="primary" /> Posture Monitoring Dashboard
+            </Typography>
+            <IconButton onClick={() => setExpandedPosture(!expandedPosture)}>
+              {expandedPosture ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </IconButton>
+          </Box>
+
+          <Collapse in={expandedPosture}>
+            <Grid container spacing={2}>
+              {/* Current Status */}
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      Current Status (Last 5 minutes)
+                    </Typography>
+                    {postureData?.average ? (
+                      <Box>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Good Posture</Typography>
+                          <Typography variant="body2" fontWeight="bold" color="success.main">
+                            {postureData.average.good_posture_percentage.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={postureData.average.good_posture_percentage} 
+                          color="success"
+                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
+                        />
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Bad Posture</Typography>
+                          <Typography variant="body2" fontWeight="bold" color="error.main">
+                            {postureData.average.bad_posture_percentage.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={postureData.average.bad_posture_percentage} 
+                          color="error"
+                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
+                        />
+                        
+                        <Typography variant="caption" color="text.secondary">
+                          Total samples: {postureData.average.total_samples}
+                        </Typography>
+                        
+                        {postureData.average.bad_posture_percentage > 60 && (
+                          <Alert severity="warning" sx={{ mt: 2 }}>
+                            <strong>Warning:</strong> High bad posture detected! Please adjust your sitting position.
+                          </Alert>
+                        )}
+                      </Box>
+                    ) : (
+                      <Typography color="text.secondary">
+                        Collecting data... Please wait for initial readings.
+                      </Typography>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Recent Alerts */}
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <NotificationsActiveIcon color="warning" /> Recent Alerts
+                    </Typography>
+                    {postureAlerts.length > 0 ? (
+                      <Stack spacing={1} sx={{ maxHeight: 200, overflowY: 'auto' }}>
+                        {postureAlerts.slice(0, 5).map((alert) => (
+                          <Alert 
+                            key={alert.id} 
+                            severity={alert.level as any} 
+                            size="small"
+                          >
+                            <Typography variant="body2">
+                              {alert.message}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {new Date(alert.created_at).toLocaleTimeString()}
+                            </Typography>
+                          </Alert>
+                        ))}
+                      </Stack>
+                    ) : (
+                      <Typography color="text.secondary">
+                        No recent alerts. Good posture maintained!
+                      </Typography>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          </Collapse>
+        </Paper>
+      )}
+
       <Snackbar 
         open={notification !== null} 
-        autoHideDuration={5000} 
+        autoHideDuration={6000} 
         onClose={handleCloseNotification}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >

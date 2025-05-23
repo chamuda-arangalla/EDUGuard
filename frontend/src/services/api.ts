@@ -229,4 +229,88 @@ export const monitoringService = {
   }
 };
 
+// Enhanced Posture Monitoring endpoints
+export const postureService = {
+  startMonitoring: async (progressReportId?: string) => {
+    try {
+      const payload = progressReportId ? { progressReportId } : {};
+      const response = await api.post('/posture/start', payload);
+      return response.data;
+    } catch (error: any) {
+      console.error('Start posture monitoring error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not start posture monitoring.' 
+      };
+    }
+  },
+  
+  stopMonitoring: async () => {
+    try {
+      const response = await api.post('/posture/stop');
+      return response.data;
+    } catch (error: any) {
+      console.error('Stop posture monitoring error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not stop posture monitoring.' 
+      };
+    }
+  },
+  
+  getStatus: async () => {
+    try {
+      const response = await api.get('/posture/status');
+      return response.data;
+    } catch (error: any) {
+      console.error('Get posture status error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        data: { is_monitoring: false, webcam_server_active: false } 
+      };
+    }
+  },
+  
+  getRecentData: async (minutes = 5, includeAverage = true) => {
+    try {
+      const response = await api.get(
+        `/posture/data/recent?minutes=${minutes}&includeAverage=${includeAverage}`
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error('Get posture data error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        data: { predictions: [], average: null, minutes, user_id: null } 
+      };
+    }
+  },
+  
+  getRecentAlerts: async (limit = 20) => {
+    try {
+      const response = await api.get(`/posture/alerts/recent?limit=${limit}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Get posture alerts error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        data: { alerts: [], total_count: 0 } 
+      };
+    }
+  },
+  
+  triggerAlertCheck: async () => {
+    try {
+      const response = await api.post('/posture/check-alerts');
+      return response.data;
+    } catch (error: any) {
+      console.error('Trigger alert check error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not trigger alert check.' 
+      };
+    }
+  }
+};
+
 export default api; 
