@@ -1,0 +1,29 @@
+{
+  "name": "eduguard-desktop-app",
+  "version": "1.0.0",
+  "description": "EDUGuard Desktop Application with Electron frontend and Python backend",
+  "main": "index.js",
+  "scripts": {
+    "start": "concurrently \"cd backend && python app.py\" \"cd frontend && npm run electron:dev\"",
+    "install-all": "npm install && cd frontend && npm install",
+    "frontend": "cd frontend && npm run electron:dev",
+    "backend": "cd backend && python app.py"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/EDUGuard-DesktopApp.git"
+  },
+  "keywords": [
+    "education",
+    "monitoring",
+    "focus",
+    "electron",
+    "python",
+    "react"
+  ],
+  "author": "EDUGuard Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+} 

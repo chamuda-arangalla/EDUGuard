@@ -1,0 +1,30 @@
+{
+  "camera_index": 0,
+  "capture_interval": 0.1,
+  "prediction_interval": 0.5,
+  "alert_check_interval": 15,
+  "database_sync_interval": 5,
+  "emotion_model_path": "models/emotion_model.h5",
+  "frame_width": 640,
+  "frame_height": 480,
+  "alert_thresholds": {
+    "attention": {
+      "warning": 0.4,
+      "critical": 0.2
+    },
+    "emotion": {
+      "negative_emotions": ["angry", "sad", "fearful", "disgusted"],
+      "warning_threshold": 0.6
+    },
+    "posture": {
+      "warning": 0.4,
+      "critical": 0.2
+    },
+    "face_recognition": {
+      "absence_threshold": 0.3
+    }
+  },
+  "database": {
+    "predictions_ttl_days": 7
+  }
+} 
