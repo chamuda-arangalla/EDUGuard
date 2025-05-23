@@ -37,6 +37,7 @@ venv.bak/
 .env.test
 .env.production
 *.env
+serviceAccountKey.json
 
 # IDE specific files
 .idea/
