@@ -200,15 +200,15 @@ def main():
                         frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
 
                 # Display results on frame
-                color = (0, 255, 0) if posture == "Good Posture" else (0, 0, 255)
-                cv2.putText(frame, f"Posture: {posture}", (50, 50),
-                           cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
+                # color = (0, 255, 0) if posture == "Good Posture" else (0, 0, 255)
+                # cv2.putText(frame, f"Posture: {posture}", (50, 50),
+                #            cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
                 
-                cv2.putText(frame, f"User: {USER_ID}", (50, 100),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
+                # cv2.putText(frame, f"User: {USER_ID}", (50, 100),
+                #            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
                 
-                cv2.putText(frame, f"Frames: {frame_count}", (50, 130),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
+                # cv2.putText(frame, f"Frames: {frame_count}", (50, 130),
+                #            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
                 # Save posture data at intervals
                 current_time = time.time()
@@ -217,12 +217,12 @@ def main():
                     last_save_time = current_time
 
                 # Display frame
-                cv2.imshow(f"EDUGuard Posture Detection - {USER_ID}", frame)
+                # cv2.imshow(f"EDUGuard Posture Detection - {USER_ID}", frame)
                 
-                # Check for quit
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    logger.info("Quit signal received")
-                    break
+                # # Check for quit
+                # if cv2.waitKey(1) & 0xFF == ord('q'):
+                #     logger.info("Quit signal received")
+                #     break
 
             except Exception as e:
                 logger.error(f"Error processing frame: {e}")

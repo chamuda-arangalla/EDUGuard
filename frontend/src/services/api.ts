@@ -313,4 +313,88 @@ export const postureService = {
   }
 };
 
+// Stress Monitoring endpoints
+export const stressService = {
+  startMonitoring: async (progressReportId?: string) => {
+    try {
+      const payload = progressReportId ? { progressReportId } : {};
+      const response = await api.post('/stress/start', payload);
+      return response.data;
+    } catch (error: any) {
+      console.error('Start stress monitoring error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not start stress monitoring.' 
+      };
+    }
+  },
+  
+  stopMonitoring: async () => {
+    try {
+      const response = await api.post('/stress/stop');
+      return response.data;
+    } catch (error: any) {
+      console.error('Stop stress monitoring error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not stop stress monitoring.' 
+      };
+    }
+  },
+  
+  getStatus: async () => {
+    try {
+      const response = await api.get('/stress/status');
+      return response.data;
+    } catch (error: any) {
+      console.error('Get stress status error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        data: { is_monitoring: false, webcam_server_active: false } 
+      };
+    }
+  },
+  
+  getRecentData: async (minutes = 5, includeAverage = true) => {
+    try {
+      const response = await api.get(
+        `/stress/data/recent?minutes=${minutes}&includeAverage=${includeAverage}`
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error('Get stress data error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        data: { predictions: [], average: null, minutes, user_id: null } 
+      };
+    }
+  },
+  
+  getRecentAlerts: async (limit = 20) => {
+    try {
+      const response = await api.get(`/stress/alerts/recent?limit=${limit}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Get stress alerts error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        data: { alerts: [], total_count: 0 } 
+      };
+    }
+  },
+  
+  triggerAlertCheck: async () => {
+    try {
+      const response = await api.post('/stress/check-alerts');
+      return response.data;
+    } catch (error: any) {
+      console.error('Trigger alert check error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not trigger alert check.' 
+      };
+    }
+  }
+};
+
 export default api; 

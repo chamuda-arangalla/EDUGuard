@@ -6,7 +6,12 @@ import struct
 import pickle
 import sys
 from keras.models import load_model
-from utils.mongodb_util import update_stress_outputs  
+import sys
+import os
+
+# Add the parent directory to the path so we can import from utils
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.database import DatabaseManager
 
 # Load the model
 model = load_model('./models/model_file_30epochs.h5')
@@ -33,11 +38,14 @@ client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client_socket.connect((HOST, PORT))
 data = b""
 
+# Initialize database manager
+db_manager = DatabaseManager(USER_EMAIL)
+
 # Timer setup
 last_saved_time = time.time()
 last_batch_time = time.time()
-save_interval = 1  # Save data every 6 seconds
-batch_interval = 60  # Save the batch to the database every 30 seconds
+save_interval = 1  # Save data every 1 second
+batch_interval = 60  # Save the batch to the database every 60 seconds
 current_batch = []  # Temporary list to store data for the current batch
 
 try:
@@ -88,17 +96,36 @@ try:
                 current_batch.append(detected_emotion)  # Store in the batch
                 last_saved_time = current_time
 
-            # Save the batch to the database every 30 seconds
+            # Save the batch to the database every 60 seconds
             if current_time - last_batch_time >= batch_interval:
                 if current_batch:  # Ensure there's data to save
-                    update_stress_outputs(progress_report_id, current_batch)
+                    # Use the DatabaseManager to save stress data
+                    timestamp = time.time()
+                    for emotion in current_batch:
+                        # Map emotions to stress values (customize this mapping based on your needs)
+                        stress_value = 0
+                        if emotion in ['Angry', 'Fear', 'Sad']:
+                            stress_value = 0.8  # High stress
+                        elif emotion == 'Disgust':
+                            stress_value = 0.6  # Medium stress
+                        elif emotion == 'Surprise':
+                            stress_value = 0.4  # Low-medium stress
+                        else:  # Happy or Neutral
+                            stress_value = 0.2  # Low stress
+                        
+                        
+                        # Save to database
+                        result = db_manager.save_prediction('stress', {'stress_level': stress_value}, timestamp)
+                        
+                    
+                    print(f"Saved {len(current_batch)} stress readings to database")
                     current_batch = []  # Clear batch after saving
                 last_batch_time = current_time
 
         # Show the frame
-        cv2.imshow(f"{USER_EMAIL} - Stress Detection", frame)
-        if cv2.waitKey(10) & 0xFF == ord('q'):
-           break
+        # cv2.imshow(f"{USER_EMAIL} - Stress Detection", frame)
+        # if cv2.waitKey(10) & 0xFF == ord('q'):
+        #    break
 finally:
     client_socket.close()
     cv2.destroyAllWindows()

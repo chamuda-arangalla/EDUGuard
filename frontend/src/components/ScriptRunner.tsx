@@ -27,7 +27,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import WarningIcon from '@mui/icons-material/Warning';
-import { postureService } from '../services/api';
+import { postureService, stressService } from '../services/api';
 
 type ScriptColor = 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error';
 
@@ -76,6 +76,7 @@ const ScriptRunner: React.FC = () => {
   const [postureData, setPostureData] = useState<PostureData | null>(null);
   const [postureAlerts, setPostureAlerts] = useState<PostureAlert[]>([]);
   const [expandedPosture, setExpandedPosture] = useState(false);
+  const [stressMonitoring, setStressMonitoring] = useState(false);
 
   // Enhanced posture monitoring functions
   const startPostureMonitoring = async () => {
@@ -123,6 +124,53 @@ const ScriptRunner: React.FC = () => {
     } catch (error) {
       setNotification({
         message: 'Error stopping posture monitoring',
+        type: 'error'
+      });
+    }
+  };
+
+  // Stress monitoring functions
+  const startStressMonitoring = async () => {
+    try {
+      const response = await stressService.startMonitoring();
+      if (response.status === 'success') {
+        setStressMonitoring(true);
+        setNotification({
+          message: 'Stress monitoring started successfully!',
+          type: 'success'
+        });
+      } else {
+        setNotification({
+          message: response.message || 'Failed to start stress monitoring',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      setNotification({
+        message: 'Error starting stress monitoring. Please ensure the backend is running.',
+        type: 'error'
+      });
+    }
+  };
+
+  const stopStressMonitoring = async () => {
+    try {
+      const response = await stressService.stopMonitoring();
+      if (response.status === 'success') {
+        setStressMonitoring(false);
+        setNotification({
+          message: 'Stress monitoring stopped successfully!',
+          type: 'success'
+        });
+      } else {
+        setNotification({
+          message: response.message || 'Failed to stop stress monitoring',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      setNotification({
+        message: 'Error stopping stress monitoring',
         type: 'error'
       });
     }
@@ -196,13 +244,20 @@ const ScriptRunner: React.FC = () => {
   useEffect(() => {
     const checkStatus = async () => {
       try {
-        const response = await postureService.getStatus();
-        if (response.status === 'success' && response.data.is_monitoring) {
+        // Check posture status
+        const postureResponse = await postureService.getStatus();
+        if (postureResponse.status === 'success' && postureResponse.data.is_monitoring) {
           setPostureMonitoring(true);
           startDataPolling();
         }
+        
+        // Check stress status
+        const stressResponse = await stressService.getStatus();
+        if (stressResponse.status === 'success' && stressResponse.data.is_monitoring) {
+          setStressMonitoring(true);
+        }
       } catch (error) {
-        console.error('Error checking posture monitoring status:', error);
+        console.error('Error checking monitoring status:', error);
       }
     };
     
@@ -229,7 +284,7 @@ const ScriptRunner: React.FC = () => {
       name: 'Stress Level Checking', 
       description: 'Detects signs of stress and recommends breaks', 
       icon: <SentimentDissatisfiedIcon />, 
-      method: () => window?.electron?.runScript2(),
+      method: stressMonitoring ? stopStressMonitoring : startStressMonitoring,
       color: 'secondary'
     },
     { 
@@ -314,14 +369,22 @@ const ScriptRunner: React.FC = () => {
           {scripts.map((script) => (
             <Grid item xs={12} sm={6} key={script.id}>
               <Button
-                variant={script.id === 1 && postureMonitoring ? "contained" : "outlined"}
+                variant={
+                  (script.id === 1 && postureMonitoring) || 
+                  (script.id === 2 && stressMonitoring) 
+                    ? "contained" 
+                    : "outlined"
+                }
                 color={script.color}
                 fullWidth
                 size="large"
                 startIcon={
                   loading === script.id ? 
                     <CircularProgress size={20} /> : 
-                    script.id === 1 && postureMonitoring ? <StopIcon /> : script.icon
+                    ((script.id === 1 && postureMonitoring) || 
+                     (script.id === 2 && stressMonitoring)) 
+                      ? <StopIcon /> 
+                      : script.icon
                 }
                 onClick={() => runScript(script.id, script.method)}
                 disabled={loading !== null}
@@ -336,12 +399,18 @@ const ScriptRunner: React.FC = () => {
               >
                 <Box sx={{ textAlign: 'left', flex: 1 }}>
                   <Typography variant="subtitle1" fontWeight="bold">
-                    {script.id === 1 ? (postureMonitoring ? 'Stop Posture Monitoring' : script.name) : script.name}
+                    {script.id === 1 && postureMonitoring 
+                      ? 'Stop Posture Monitoring' 
+                      : script.id === 2 && stressMonitoring 
+                        ? 'Stop Stress Monitoring'
+                        : script.name
+                    }
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     {script.description}
                   </Typography>
-                  {script.id === 1 && postureMonitoring && (
+                  {((script.id === 1 && postureMonitoring) || 
+                    (script.id === 2 && stressMonitoring)) && (
                     <Chip 
                       label="Active" 
                       color="success" 
