@@ -1,19 +1,17 @@
 ﻿#!/usr/bin/env python
 import cv2
-import dlib
 import numpy as np
 import time
 import sys
 import json
 import os
 import logging
-import requests
 import socket
 import struct
 import pickle
-from scipy.spatial import distance as dist
-from datetime import datetime
 import threading
+from datetime import datetime
+import tensorflow as tf
 
 # Add parent directory to path so we can import from utils
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -31,45 +29,72 @@ logging.basicConfig(
 )
 logger = logging.getLogger('CVS_Detection')
 
-# Define constants
-EYE_AR_THRESH = 0.19  # Eye aspect ratio threshold for blink detection
-EYE_AR_CONSEC_FRAMES = 2  # Number of consecutive frames the eye must be below threshold to be a blink
-NORMAL_BLINK_RATE_MIN = 17  # Minimum normal blink rate (per minute)
-NORMAL_BLINK_RATE_MAX = 20  # Maximum normal blink rate (per minute)
-
 # Webcam server settings
 WEBCAM_HOST = '127.0.0.1'
 WEBCAM_PORT = 9999
 
-# Initialize dlib's face detector and facial landmark predictor
-detector = dlib.get_frontal_face_detector()
-predictor_path = os.path.join(script_dir, "shape_predictor_68_face_landmarks.dat")
+# Reference values for distance estimation
+REFERENCE_FACE_WIDTH = 160  # Pixels (adjust based on testing)
+NORMAL_DISTANCE_CM = 60
+CLOSE_THRESHOLD = 50  # cm
+FAR_THRESHOLD = 70  # cm
+SCREEN_TIME_LIMIT = 20 * 60  # 20 minutes
+FACE_LOSS_RESET_TIME = 3  # Time in seconds to reset blink count if face is lost
+EYE_LOSS_RESET_TIME = 2  # Time in seconds to reset blink count if eyes are lost
 
-# Check if the predictor file exists
-if not os.path.exists(predictor_path):
-    logger.error(f"Facial landmark predictor file not found at: {predictor_path}")
-    logger.info("Downloading facial landmark predictor...")
-    # You might need to download the file here if it doesn't exist
-    import urllib.request
-    predictor_url = "https://github.com/davisking/dlib-models/raw/master/shape_predictor_68_face_landmarks.dat.bz2"
-    compressed_file = os.path.join(script_dir, "shape_predictor_68_face_landmarks.dat.bz2")
-    try:
-        urllib.request.urlretrieve(predictor_url, compressed_file)
-        import bz2
-        with open(predictor_path, 'wb') as new_file, bz2.BZ2File(compressed_file, 'rb') as file:
-            for data in iter(lambda: file.read(100 * 1024), b''):
-                new_file.write(data)
-        os.remove(compressed_file)
-        logger.info("Downloaded and extracted facial landmark predictor successfully")
-    except Exception as e:
-        logger.error(f"Failed to download facial landmark predictor: {e}")
-        sys.exit(1)
+# Define constants for blink rate tracking
+NORMAL_BLINK_RATE_MIN = 17  # Minimum normal blink rate (per minute)
+NORMAL_BLINK_RATE_MAX = 20  # Maximum normal blink rate (per minute)
 
-predictor = dlib.shape_predictor(predictor_path)
+# Try to load the eye blink detection model
+model = None
+try:
+    # Try different possible model paths
+    model_paths = [
+        os.path.join(script_dir, "models", "eye_blink_model.h5"),
+        os.path.join(script_dir, "eye_blink_model.h5"),
+        os.path.join(backend_dir, "models", "eye_blink_model.h5")
+    ]
+    
+    for model_path in model_paths:
+        if os.path.exists(model_path):
+            logger.info(f"Loading eye blink detection model from: {model_path}")
+            model = tf.keras.models.load_model(model_path)
+            break
+    
+    if model is None:
+        logger.warning("Could not find eye blink detection model. Using Haar cascade method as fallback.")
+except Exception as e:
+    logger.error(f"Error loading eye blink model: {e}")
+    logger.warning("Falling back to Haar cascade method")
+    model = None
 
-# Define facial landmarks indices for the eyes
-(L_START, L_END) = (42, 48)  # Left eye landmarks
-(R_START, R_END) = (36, 42)  # Right eye landmarks
+# Load Haar Cascade for face detection
+try:
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    if face_cascade.empty():
+        logger.error("Failed to load Haar cascade classifier")
+    else:
+        logger.info("Haar cascade classifier loaded successfully")
+except Exception as e:
+    logger.error(f"Error loading face cascade: {e}")
+    sys.exit(1)
+
+# Function to preprocess frame for model
+def preprocess_frame(frame, target_size=(26, 34)):
+    if len(frame.shape) == 3:
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    
+    resized_frame = cv2.resize(frame, (target_size[1], target_size[0]))  # (width, height)
+    normalized_frame = resized_frame / 255.0
+    
+    return np.expand_dims(normalized_frame, axis=(0, -1))
+
+# Function to estimate distance from face width
+def estimate_distance(face_width):
+    if face_width == 0:
+        return None  # No face detected
+    return (REFERENCE_FACE_WIDTH * NORMAL_DISTANCE_CM) / face_width
 
 class BlinkDetector:
     def __init__(self, user_id, progress_report_id):
@@ -79,16 +104,32 @@ class BlinkDetector:
         self.alert_manager = AlertManager(self.db_manager)
         
         # Blink detection variables
-        self.blink_counter = 0
-        self.total_blinks = 0
+        self.blink_count = 0
+        self.eye_closed = False
+        self.start_time = None  # Timer for screen time tracking
+        self.last_seen_time = time.time()  # Track last detected face time
+        self.last_eye_seen_time = time.time()  # Track last detected eye time
         self.blink_start_time = time.time()
-        self.frame_counter = 0
-        self.ear = 0  # Eye aspect ratio
+        
+        # Timer setup for data saving
+        self.last_saved_time = time.time()
+        self.last_batch_time = time.time()
+        self.save_interval = 10  # Save every 10 seconds for individual data points
+        self.batch_interval = 60  # Save batch every 60 seconds (1 minute)
+        self.current_batch = []  # Store batch data
+        
+        # Face/eye detection status
+        self.face_detected = False
+        self.eye_state = "Unknown"
+        self.distance_cm = None
+        self.distance_msg = "No Face Detected"
         
         # Status reporting variables
         self.last_update_time = time.time()
         self.last_blink_rate = 0
         self.running = True
+        
+        # Status reporting thread
         self.status_thread = threading.Thread(target=self._status_reporter)
         self.status_thread.daemon = True
         self.status_thread.start()
@@ -98,181 +139,71 @@ class BlinkDetector:
         self.data_save_thread.daemon = True
         self.data_save_thread.start()
         
-        # Track time since last data save
-        self.last_data_save_time = time.time()
-        
-        # Face detection history
-        self.no_face_counter = 0
-        self.max_no_face_frames = 30  # Number of frames to wait before assuming no face
-        
         logger.info(f"Initialized blink detector for user {user_id}")
     
+    def _status_reporter(self):
+        """Report status periodically to ensure the process is running"""
+        while self.running:
+            try:
+                # Update the last active timestamp
+                self.last_update_time = time.time()
+                
+                # Calculate elapsed time since last blink count reset
+                if self.start_time:
+                    elapsed_time = time.time() - self.start_time
+                else:
+                    elapsed_time = 0
+                
+                # Calculate blink rate per minute
+                if elapsed_time > 0:
+                    blink_rate = (self.blink_count / elapsed_time) * 60
+                else:
+                    blink_rate = 0
+                
+                logger.info(f"Status: Running for {elapsed_time:.1f}s, {self.blink_count} blinks, "
+                           f"~{blink_rate:.1f} blinks/min, Eye state: {self.eye_state}, "
+                           f"Distance: {self.distance_msg}")
+                
+                # Sleep for 30 seconds
+                for _ in range(30):
+                    if not self.running:
+                        break
+                    time.sleep(1)
+                    
+            except Exception as e:
+                logger.error(f"Error in status reporter: {e}")
+                time.sleep(10)  # Wait a bit before retrying
+    
     def _periodic_data_saver(self):
-        """Thread that ensures data is saved periodically even if no blinks are detected"""
+        """Thread that ensures data is saved periodically"""
         while self.running:
             try:
                 current_time = time.time()
-                time_since_last_save = current_time - self.last_data_save_time
+                time_since_last_save = current_time - self.last_batch_time
                 
-                # If more than 2 minutes have passed without saving data
-                if time_since_last_save > 120:
-                    # Calculate a conservative blink rate estimate or use last known rate
-                    if self.last_blink_rate > 0:
-                        blink_rate = self.last_blink_rate
+                # If more than batch_interval has passed, save data
+                if time_since_last_save > self.batch_interval:
+                    # Calculate blink rate for the last minute
+                    if self.start_time and (current_time - self.start_time) > 0:
+                        elapsed_time = current_time - self.start_time
+                        blink_rate = int((self.blink_count / elapsed_time) * 60)
                     else:
-                        blink_rate = 18  # Normal average
+                        # Default to a normal blink rate if no data
+                        blink_rate = 18
                     
-                    logger.info(f"Periodic save: No data saved for {time_since_last_save:.1f}s, saving blink rate {blink_rate}")
+                    logger.info(f"Periodic save: Saving blink rate {blink_rate}/minute")
                     self._save_blink_data(blink_rate)
-                    self.last_data_save_time = current_time
+                    self.last_batch_time = current_time
+                    
+                    # Check for alerts based on saved data
+                    self._check_blink_rate_alert(blink_rate)
                 
-                # Sleep for 30 seconds
-                time.sleep(30)
+                # Sleep for 10 seconds
+                time.sleep(10)
                 
             except Exception as e:
                 logger.error(f"Error in periodic data saver: {e}")
                 time.sleep(60)  # Wait a minute before retrying
-    
-    def eye_aspect_ratio(self, eye):
-        """Calculate the eye aspect ratio (EAR)"""
-        # Compute the euclidean distances between the vertical eye landmarks
-        A = dist.euclidean(eye[1], eye[5])
-        B = dist.euclidean(eye[2], eye[4])
-        
-        # Compute the euclidean distance between the horizontal eye landmarks
-        C = dist.euclidean(eye[0], eye[3])
-        
-        # Compute the eye aspect ratio
-        ear = (A + B) / (2.0 * C)
-        return ear
-    
-    def detect_blinks(self, frame):
-        """Detect blinks in the given frame"""
-        # Convert frame to grayscale
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
-        # Apply histogram equalization to improve contrast
-        gray = cv2.equalizeHist(gray)
-        
-        # Detect faces
-        faces = detector(gray, 0)
-        
-        # Reset EAR for this frame
-        self.ear = 0
-        
-        # Check if any faces were detected
-        if len(faces) == 0:
-            self.no_face_counter += 1
-            
-            # If no face detected for several consecutive frames
-            if self.no_face_counter >= self.max_no_face_frames:
-                logger.warning(f"No face detected for {self.no_face_counter} frames")
-                
-                # If it's been a while since we saved data and we're not detecting faces
-                current_time = time.time()
-                if current_time - self.blink_start_time >= 60:
-                    # Save a default normal blink rate
-                    logger.info("No face detected for extended period, saving default blink rate")
-                    self._save_blink_data(18)  # Save a normal blink rate
-                    self.blink_start_time = current_time
-                    self.last_data_save_time = current_time
-                
-            # Draw text showing no face detected
-            cv2.putText(frame, "No Face Detected", (10, 30), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        else:
-            # Reset no face counter when a face is detected
-            self.no_face_counter = 0
-            
-            # Process each detected face
-            for face in faces:
-                # Draw face rectangle
-                x, y, w, h = face.left(), face.top(), face.width(), face.height()
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                
-                # Detect facial landmarks
-                shape = predictor(gray, face)
-                shape = np.array([(shape.part(i).x, shape.part(i).y) for i in range(68)])
-                
-                # Extract the left and right eye coordinates
-                leftEye = shape[L_START:L_END]
-                rightEye = shape[R_START:R_END]
-                
-                # Calculate the eye aspect ratios
-                leftEAR = self.eye_aspect_ratio(leftEye)
-                rightEAR = self.eye_aspect_ratio(rightEye)
-                
-                # Average the eye aspect ratio together for both eyes
-                self.ear = (leftEAR + rightEAR) / 2.0
-                
-                # Draw eye aspect ratio on frame
-                cv2.putText(frame, f"EAR: {self.ear:.2f}", (10, 30), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                
-                # Check if eye aspect ratio is below the blink threshold
-                if self.ear < EYE_AR_THRESH:
-                    self.blink_counter += 1
-                    
-                    # Visual indicator for potential blink
-                    cv2.putText(frame, f"BLINK COUNTER: {self.blink_counter}", (10, 60), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-                else:
-                    # If the eyes were closed for a sufficient number of frames, count it as a blink
-                    if self.blink_counter >= EYE_AR_CONSEC_FRAMES:
-                        self.total_blinks += 1
-                        logger.info(f"Blink detected! Total: {self.total_blinks}")
-                        
-                        # Visual counter for total blinks
-                        cv2.putText(frame, f"TOTAL BLINKS: {self.total_blinks}", (10, 90), 
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                    
-                    # Reset the blink counter
-                    self.blink_counter = 0
-                
-                # Draw eyes on the frame
-                # Draw left eye
-                for i in range(0, len(leftEye)):
-                    pt1 = (leftEye[i][0], leftEye[i][1])
-                    pt2 = (leftEye[(i+1)%len(leftEye)][0], leftEye[(i+1)%len(leftEye)][1])
-                    cv2.line(frame, pt1, pt2, (0, 255, 0), 1)
-                
-                # Draw right eye
-                for i in range(0, len(rightEye)):
-                    pt1 = (rightEye[i][0], rightEye[i][1])
-                    pt2 = (rightEye[(i+1)%len(rightEye)][0], rightEye[(i+1)%len(rightEye)][1])
-                    cv2.line(frame, pt1, pt2, (0, 255, 0), 1)
-        
-        self.frame_counter += 1
-        
-        # Calculate blink rate every 60 seconds and save to database
-        elapsed_time = time.time() - self.blink_start_time
-        if elapsed_time >= 60:  # 1 minute
-            blink_rate = self.total_blinks
-            minutes_elapsed = elapsed_time / 60
-            
-            # Save to database
-            self._save_blink_data(blink_rate)
-            self.last_data_save_time = time.time()
-            
-            # Check for alerts
-            self._check_blink_rate_alert(blink_rate)
-            
-            # Reset counters
-            self.last_blink_rate = blink_rate
-            self.total_blinks = 0
-            self.blink_start_time = time.time()
-            
-            logger.info(f"Blink rate: {blink_rate:.1f} blinks/minute (over {minutes_elapsed:.1f} minutes)")
-        
-        # Display elapsed time and estimated blink rate
-        if elapsed_time > 0:
-            estimated_rate = (self.total_blinks / elapsed_time) * 60
-            cv2.putText(frame, f"Time: {elapsed_time:.1f}s", (10, 120), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-            cv2.putText(frame, f"Est. Rate: {estimated_rate:.1f}/min", (10, 150), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-        
-        return frame
     
     def _save_blink_data(self, blink_rate):
         """Save blink rate data to the database"""
@@ -281,12 +212,18 @@ class BlinkDetector:
             prediction = {
                 'blink_count': blink_rate,
                 'timestamp': int(time.time() * 1000),
-                'progress_report_id': self.progress_report_id
+                'progress_report_id': self.progress_report_id,
+                'eye_state': self.eye_state,
+                'distance': self.distance_msg
             }
             
             # Save to database
             self.db_manager.save_prediction('cvs', prediction)
             logger.info(f"Saved blink rate data to database: {blink_rate} blinks/minute")
+            
+            # Reset blink count after saving to database
+            self.blink_count = 0
+            self.start_time = time.time()
             
         except Exception as e:
             logger.error(f"Error saving blink data: {e}")
@@ -320,38 +257,142 @@ class BlinkDetector:
         except Exception as e:
             logger.error(f"Error checking blink rate alert: {e}")
     
-    def _status_reporter(self):
-        """Report status periodically to ensure the process is running"""
-        while self.running:
-            try:
-                # Update the last active timestamp
-                self.last_update_time = time.time()
+    def process_frame(self, frame):
+        """Process a frame to detect face, eyes, and blinks"""
+        try:
+            # Convert frame to grayscale for face detection
+            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            
+            # Detect faces
+            faces = face_cascade.detectMultiScale(gray_frame, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+            
+            self.eye_state = "Unknown"  # Default value
+            self.distance_msg = "No Face Detected"
+            color = (0, 0, 255)  # Red for warnings
+            
+            if len(faces) > 0:
+                self.face_detected = True
+                self.last_seen_time = time.time()  # Update last seen time
                 
-                # Log current status
-                elapsed_time = time.time() - self.blink_start_time
-                estimated_blink_rate = (self.total_blinks / elapsed_time) * 60 if elapsed_time > 0 else 0
-                logger.info(f"Status: Running for {elapsed_time:.1f}s, {self.total_blinks} blinks, ~{estimated_blink_rate:.1f} blinks/min, EAR: {self.ear:.3f}")
+                if self.start_time is None:
+                    self.start_time = time.time()
                 
-                # Sleep for 30 seconds
-                for _ in range(30):
-                    if not self.running:
-                        break
-                    time.sleep(1)
+                # Get the largest face
+                x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+                self.distance_cm = estimate_distance(w)
+                
+                if self.distance_cm:
+                    if self.distance_cm < CLOSE_THRESHOLD:
+                        self.distance_msg = "Too Close!"
+                        color = (0, 0, 255)  # Red
+                    elif self.distance_cm > FAR_THRESHOLD:
+                        self.distance_msg = "Too Far!"
+                        color = (255, 0, 0)  # Blue
+                    else:
+                        self.distance_msg = "Good Distance"
+                        color = (0, 255, 0)  # Green
                     
-            except Exception as e:
-                logger.error(f"Error in status reporter: {e}")
-                time.sleep(10)  # Wait a bit before retrying
+                    # Display distance info
+                    cv2.putText(frame, f'Distance: {int(self.distance_cm)} cm', (10, 90), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                    cv2.putText(frame, self.distance_msg, (10, 120), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                
+                # Draw face bounding box
+                cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+                
+                # Extract ROI for eye detection (upper half of face)
+                roi = gray_frame[y:y + h // 2, x:x + w]
+                
+                if roi.size > 0:
+                    # If we have the deep learning model, use it
+                    if model is not None:
+                        preprocessed_roi = preprocess_frame(roi)
+                        prediction = model.predict(preprocessed_roi, verbose=0)
+                        self.eye_state = "Closed" if prediction > 0.5 else "Open"
+                    else:
+                        # Fallback to a simpler method - just check average brightness
+                        # This is not as accurate but serves as a fallback
+                        avg_brightness = np.mean(roi)
+                        self.eye_state = "Closed" if avg_brightness < 100 else "Open"
+                    
+                    self.last_eye_seen_time = time.time()
+                    
+                    # Update blink count
+                    if self.eye_state == "Closed" and not self.eye_closed:
+                        self.eye_closed = True
+                    elif self.eye_state == "Open" and self.eye_closed:
+                        self.blink_count += 1
+                        self.eye_closed = False
+            else:
+                self.face_detected = False
+                # Reset if face not seen for too long
+                if time.time() - self.last_seen_time > FACE_LOSS_RESET_TIME:
+                    if self.blink_count > 0:
+                        # Save data before resetting
+                        elapsed_time = time.time() - self.start_time if self.start_time else 60
+                        blink_rate = int((self.blink_count / elapsed_time) * 60) if elapsed_time > 0 else 18
+                        self._save_blink_data(blink_rate)
+                    
+                    self.blink_count = 0
+                    self.start_time = None
+            
+            # Reset if eyes not seen for too long
+            if time.time() - self.last_eye_seen_time > EYE_LOSS_RESET_TIME:
+                self.blink_count = 0
+            
+            # Check if it's time to save data
+            current_time = time.time()
+            if current_time - self.last_saved_time >= self.save_interval:
+                # Add data to batch
+                data_object = {
+                    "eye_state": self.eye_state,
+                    "distance": self.distance_msg,
+                    "blink_count": int(self.blink_count),
+                    "timestamp": int(current_time * 1000)
+                }
+                
+                # Convert to JSON and store in batch
+                data_string = json.dumps(data_object)
+                self.current_batch.append(data_string)
+                self.last_saved_time = current_time
+            
+            # Check if it's time to save the batch
+            if current_time - self.last_batch_time >= self.batch_interval:
+                if self.current_batch:
+                    # Calculate the blink rate over the interval
+                    if self.start_time and (current_time - self.start_time) > 0:
+                        elapsed_time = current_time - self.start_time
+                        blink_rate = int((self.blink_count / elapsed_time) * 60)
+                        self._save_blink_data(blink_rate)
+                    
+                    # Clear the batch
+                    self.current_batch = []
+                
+                self.last_batch_time = current_time
+            
+            # Display blink count & eye state
+            cv2.putText(frame, f'Blink Count: {self.blink_count}', (10, 30), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            cv2.putText(frame, f'Eye State: {self.eye_state}', (10, 60), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            
+            return frame
+            
+        except Exception as e:
+            logger.error(f"Error processing frame: {e}")
+            return frame
     
     def stop(self):
         """Stop the blink detector"""
         self.running = False
         
-        # Save final data
-        elapsed_time = time.time() - self.blink_start_time
-        if elapsed_time > 0 and self.total_blinks > 0:
-            # Calculate blink rate for the partial minute
-            blink_rate = (self.total_blinks / elapsed_time) * 60
-            self._save_blink_data(blink_rate)
+        # Save final data before stopping
+        if self.blink_count > 0 and self.start_time:
+            elapsed_time = time.time() - self.start_time
+            if elapsed_time > 0:
+                blink_rate = int((self.blink_count / elapsed_time) * 60)
+                self._save_blink_data(blink_rate)
         
         logger.info("Blink detector stopped")
 
@@ -467,17 +508,17 @@ def main():
                     time.sleep(5)
                     continue
                 
-                # Process the frame for blink detection and get the visualized frame
-                processed_frame = detector.detect_blinks(frame)
+                # Process the frame using the original algorithm
+                processed_frame = detector.process_frame(frame)
                 
-                # Display the frame for debugging
+                # Display the frame
                 cv2.imshow('CVS Detection', processed_frame)
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
                     break
                 elif key == ord('b'):  # Manual blink for testing
-                    detector.total_blinks += 1
-                    logger.info(f"Manual blink added! Total: {detector.total_blinks}")
+                    detector.blink_count += 1
+                    logger.info(f"Manual blink added! Total: {detector.blink_count}")
                 
             except socket.error as e:
                 logger.error(f"Socket error: {e}")
@@ -488,11 +529,11 @@ def main():
                 
                 # Save periodic data even if webcam fails
                 current_time = time.time()
-                if current_time - detector.blink_start_time > 60:
+                if detector.start_time and current_time - detector.last_batch_time > detector.batch_interval:
                     logger.info("Saving periodic data despite webcam error")
                     # Save with a conservative default value
                     detector._save_blink_data(17)  # Normal blink rate
-                    detector.blink_start_time = current_time
+                    detector.last_batch_time = current_time
                 
             except Exception as e:
                 logger.error(f"Error in main loop: {e}")

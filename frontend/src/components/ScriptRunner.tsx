@@ -747,6 +747,40 @@ const ScriptRunner: React.FC = () => {
       return;
     }
     
+    // Special handling for stress monitoring
+    if (id === 2) {
+      try {
+        setLoading(id);
+        await method();
+      } catch (error) {
+        console.error(`Error running stress monitoring:`, error);
+        setNotification({ 
+          message: `Failed to manage stress monitoring: ${(error as Error).message || 'Unknown error'}`, 
+          type: 'error' 
+        });
+      } finally {
+        setLoading(null);
+      }
+      return;
+    }
+    
+    // Special handling for eye strain monitoring
+    if (id === 3) {
+      try {
+        setLoading(id);
+        await method();
+      } catch (error) {
+        console.error(`Error running eye strain monitoring:`, error);
+        setNotification({ 
+          message: `Failed to manage eye strain monitoring: ${(error as Error).message || 'Unknown error'}`, 
+          type: 'error' 
+        });
+      } finally {
+        setLoading(null);
+      }
+      return;
+    }
+    
     // Original script handling for other scripts
     try {
       setLoading(id);
@@ -859,7 +893,8 @@ const ScriptRunner: React.FC = () => {
               <Button
                 variant={
                   (script.id === 1 && postureMonitoring) || 
-                  (script.id === 2 && stressMonitoring) 
+                  (script.id === 2 && stressMonitoring) || 
+                  (script.id === 3 && cvsMonitoring)
                     ? "contained" 
                     : "outlined"
                 }
@@ -870,7 +905,8 @@ const ScriptRunner: React.FC = () => {
                   loading === script.id ? 
                     <CircularProgress size={20} /> : 
                     ((script.id === 1 && postureMonitoring) || 
-                     (script.id === 2 && stressMonitoring)) 
+                     (script.id === 2 && stressMonitoring) || 
+                     (script.id === 3 && cvsMonitoring)) 
                       ? <StopIcon /> 
                       : script.icon
                 }
@@ -891,14 +927,17 @@ const ScriptRunner: React.FC = () => {
                       ? 'Stop Posture Monitoring' 
                       : script.id === 2 && stressMonitoring 
                         ? 'Stop Stress Monitoring'
-                        : script.name
+                        : script.id === 3 && cvsMonitoring
+                          ? 'Stop Eye Strain Monitoring'
+                          : script.name
                     }
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     {script.description}
                   </Typography>
                   {((script.id === 1 && postureMonitoring) || 
-                    (script.id === 2 && stressMonitoring)) && (
+                    (script.id === 2 && stressMonitoring) || 
+                    (script.id === 3 && cvsMonitoring)) && (
                     <Chip 
                       label="Active" 
                       color="success" 
