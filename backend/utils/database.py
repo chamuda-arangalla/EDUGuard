@@ -450,6 +450,41 @@ class DatabaseManager:
                     'total_samples': total_count,
                     'samples': len(predictions)
                 }
+            elif model_name == 'hydration':
+                # Calculate hydration statistics
+                hydration_values = [
+                    p.get('prediction', {}).get('hydration_status', '') 
+                    for p in predictions
+                ]
+                
+                if not hydration_values:
+                    return None
+                
+                # Count lip statuses
+                dry_count = sum(1 for status in hydration_values if status == 'Dry Lips')
+                normal_count = sum(1 for status in hydration_values if status == 'Normal Lips')
+                total_count = len(hydration_values)
+                
+                # Get average dryness score
+                dryness_scores = [
+                    p.get('prediction', {}).get('dryness_score', 0) 
+                    for p in predictions
+                ]
+                avg_dryness_score = sum(dryness_scores) / len(dryness_scores) if dryness_scores else 0
+                
+                # Calculate percentages
+                dry_percentage = (dry_count / total_count) * 100 if total_count > 0 else 0
+                normal_percentage = (normal_count / total_count) * 100 if total_count > 0 else 0
+                
+                return {
+                    'dry_lips_count': dry_count,
+                    'normal_lips_count': normal_count,
+                    'dry_lips_percentage': dry_percentage,
+                    'normal_lips_percentage': normal_percentage,
+                    'avg_dryness_score': avg_dryness_score,
+                    'total_samples': total_count,
+                    'samples': len(predictions)
+                }
             return None
         except Exception as e:
             logger.error(f"Error calculating prediction average: {e}")

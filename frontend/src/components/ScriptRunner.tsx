@@ -26,7 +26,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
-import { postureService, stressService, cvsService } from '../services/api';
+import { postureService, stressService, cvsService, hydrationService } from '../services/api';
 
 type ScriptColor = 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error';
 
@@ -76,6 +76,21 @@ interface CVSData {
     low_blink_percentage: number;
     normal_blink_percentage: number;
     high_blink_percentage: number;
+    total_samples: number;
+    samples?: number;
+  } | null;
+  minutes: number;
+  user_id?: string | null;
+}
+
+interface HydrationData {
+  predictions: any[];
+  average: {
+    dry_lips_count: number;
+    normal_lips_count: number;
+    dry_lips_percentage: number;
+    normal_lips_percentage: number;
+    avg_dryness_score: number;
     total_samples: number;
     samples?: number;
   } | null;
@@ -134,6 +149,22 @@ interface CVSAlert {
   };
 }
 
+interface HydrationAlert {
+  id: string;
+  type: string;
+  message: string;
+  level: string;
+  timestamp: number;
+  created_at: string;
+  read: boolean;
+  data?: {
+    dry_lips_percentage: number;
+    normal_lips_percentage: number;
+    total_samples: number;
+    threshold: number;
+  };
+}
+
 const ScriptRunner: React.FC = () => {
   const [loading, setLoading] = useState<number | null>(null);
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error' | 'warning' | 'info'} | null>(null);
@@ -151,6 +182,11 @@ const ScriptRunner: React.FC = () => {
   const [cvsData, setCvsData] = useState<CVSData | null>(null);
   const [cvsAlerts, setCvsAlerts] = useState<CVSAlert[]>([]);
   const [expandedCVS, setExpandedCVS] = useState(false);
+  // New state variables for hydration monitoring
+  const [hydrationMonitoring, setHydrationMonitoring] = useState(false);
+  const [hydrationData, setHydrationData] = useState<HydrationData | null>(null);
+  const [hydrationAlerts, setHydrationAlerts] = useState<HydrationAlert[]>([]);
+  const [expandedHydration, setExpandedHydration] = useState(false);
 
   // Webcam server control functions
   const startWebcamServer = async () => {
@@ -629,6 +665,182 @@ const ScriptRunner: React.FC = () => {
     setCvsAlerts([]);
   };
 
+  // Hydration monitoring functions
+  const startHydrationMonitoring = async () => {
+    try {
+      // If webcam server is not active, try to start it first
+      if (!webcamServerActive) {
+        setNotification({
+          message: 'Starting webcam server first...',
+          type: 'info'
+        });
+        
+        await startWebcamServer();
+        // Small delay to ensure webcam server is fully started
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      const response = await hydrationService.startMonitoring();
+      if (response.status === 'success') {
+        setHydrationMonitoring(true);
+        setNotification({
+          message: 'Hydration monitoring started successfully!',
+          type: 'success'
+        });
+        // Start polling for hydration data
+        startHydrationDataPolling();
+      } else {
+        setNotification({
+          message: response.message || 'Failed to start hydration monitoring',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      setNotification({
+        message: 'Error starting hydration monitoring. Please ensure the backend is running.',
+        type: 'error'
+      });
+    }
+  };
+
+  const stopHydrationMonitoring = async () => {
+    try {
+      const response = await hydrationService.stopMonitoring();
+      if (response.status === 'success') {
+        setHydrationMonitoring(false);
+        setNotification({
+          message: 'Hydration monitoring stopped successfully!',
+          type: 'success'
+        });
+        // Stop polling
+        stopHydrationDataPolling();
+      } else {
+        setNotification({
+          message: response.message || 'Failed to stop hydration monitoring',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      setNotification({
+        message: 'Error stopping hydration monitoring',
+        type: 'error'
+      });
+    }
+  };
+
+  // Hydration data polling for real-time updates
+  const [hydrationPollingInterval, setHydrationPollingInterval] = useState<NodeJS.Timeout | null>(null);
+
+  const startHydrationDataPolling = () => {
+    // Poll every 30 seconds for hydration data
+    const interval = setInterval(async () => {
+      try {
+        // Get recent hydration data
+        const dataResponse = await hydrationService.getRecentData(5, true);
+        if (dataResponse.status === 'success') {
+          console.log('Hydration data received:', dataResponse.data);
+          setHydrationData(dataResponse.data);
+          
+          // Check for new alerts
+          const alertsResponse = await hydrationService.getRecentAlerts(10);
+          if (alertsResponse.status === 'success') {
+            const alerts = alertsResponse.data.alerts;
+            setHydrationAlerts(alerts);
+            
+            // Show notification for new alerts
+            const recentAlert = alerts.find((alert: HydrationAlert) => 
+              !alert.read && new Date(alert.created_at).getTime() > Date.now() - 60000 // Last minute
+            );
+            
+            if (recentAlert) {
+              setNotification({
+                message: recentAlert.message,
+                type: 'warning'
+              });
+            }
+          }
+        } else {
+          console.error('Error getting hydration data:', dataResponse);
+        }
+      } catch (error) {
+        console.error('Error polling hydration data:', error);
+      }
+    }, 30000);
+    
+    setHydrationPollingInterval(interval);
+    
+    // Get initial data immediately
+    setTimeout(async () => {
+      try {
+        const dataResponse = await hydrationService.getRecentData(5, true);
+        if (dataResponse.status === 'success') {
+          console.log('Initial hydration data received:', dataResponse.data);
+          setHydrationData(dataResponse.data);
+        } else {
+          console.warn('Failed to get initial hydration data:', dataResponse);
+          // Set default data if none received
+          setHydrationData({
+            predictions: [],
+            average: {
+              dry_lips_count: 0,
+              normal_lips_count: 1,
+              dry_lips_percentage: 0.0,
+              normal_lips_percentage: 100.0,
+              avg_dryness_score: 0.1,
+              total_samples: 1,
+              samples: 1
+            },
+            minutes: 5,
+            user_id: null
+          });
+        }
+        
+        const alertsResponse = await hydrationService.getRecentAlerts(10);
+        if (alertsResponse.status === 'success') {
+          setHydrationAlerts(alertsResponse.data.alerts);
+        } else {
+          console.warn('Failed to get hydration alerts:', alertsResponse);
+        }
+      } catch (error) {
+        console.error('Error getting initial hydration data:', error);
+        // Set default data if error occurs
+        setHydrationData({
+          predictions: [],
+          average: {
+            dry_lips_count: 0,
+            normal_lips_count: 1,
+            dry_lips_percentage: 0.0,
+            normal_lips_percentage: 100.0,
+            avg_dryness_score: 0.1,
+            total_samples: 1,
+            samples: 1
+          },
+          minutes: 5,
+          user_id: null
+        });
+      }
+    }, 3000);
+  };
+
+  const stopHydrationDataPolling = () => {
+    if (hydrationPollingInterval) {
+      clearInterval(hydrationPollingInterval);
+      setHydrationPollingInterval(null);
+    }
+    setHydrationData(null);
+    setHydrationAlerts([]);
+  };
+
+  // Function to get hydration status color
+  const getHydrationStatusColor = () => {
+    if (!hydrationData?.average) return 'default';
+    
+    const dryPercentage = hydrationData.average.dry_lips_percentage;
+    if (dryPercentage > 60) return 'error';
+    if (dryPercentage > 30) return 'warning';
+    return 'success';
+  };
+
   // Check monitoring status on component mount
   useEffect(() => {
     const checkStatus = async () => {
@@ -678,6 +890,22 @@ const ScriptRunner: React.FC = () => {
             setWebcamServerActive(true);
           }
         }
+        
+        // Check hydration status
+        const hydrationResponse = await hydrationService.getStatus();
+        if (hydrationResponse.status === 'success') {
+          // Set hydration monitoring status
+          if (hydrationResponse.data.is_monitoring) {
+            setHydrationMonitoring(true);
+            startHydrationDataPolling();
+          }
+          
+          // Also check webcam server from hydration API if it wasn't active in other APIs
+          if (!postureResponse.data?.webcam_server_active && !stressResponse.data?.webcam_server_active && 
+              !cvsResponse.data?.webcam_server_active && hydrationResponse.data.webcam_server_active) {
+            setWebcamServerActive(true);
+          }
+        }
       } catch (error) {
         console.error('Error checking monitoring status:', error);
       }
@@ -690,6 +918,7 @@ const ScriptRunner: React.FC = () => {
       stopDataPolling();
       stopStressDataPolling();
       stopCVSDataPolling();
+      stopHydrationDataPolling();
     };
   }, []);
 
@@ -724,7 +953,7 @@ const ScriptRunner: React.FC = () => {
       name: 'Dehydration Checking', 
       description: 'Reminds to drink water during study sessions', 
       icon: <LocalDrinkIcon />, 
-      method: () => window?.electron?.runScript4(),
+      method: hydrationMonitoring ? stopHydrationMonitoring : startHydrationMonitoring,
       color: 'info'
     }
   ];
@@ -773,6 +1002,23 @@ const ScriptRunner: React.FC = () => {
         console.error(`Error running eye strain monitoring:`, error);
         setNotification({ 
           message: `Failed to manage eye strain monitoring: ${(error as Error).message || 'Unknown error'}`, 
+          type: 'error' 
+        });
+      } finally {
+        setLoading(null);
+      }
+      return;
+    }
+    
+    // Special handling for hydration monitoring
+    if (id === 4) {
+      try {
+        setLoading(id);
+        await method();
+      } catch (error) {
+        console.error(`Error running hydration monitoring:`, error);
+        setNotification({ 
+          message: `Failed to manage hydration monitoring: ${(error as Error).message || 'Unknown error'}`, 
           type: 'error' 
         });
       } finally {
@@ -894,7 +1140,8 @@ const ScriptRunner: React.FC = () => {
                 variant={
                   (script.id === 1 && postureMonitoring) || 
                   (script.id === 2 && stressMonitoring) || 
-                  (script.id === 3 && cvsMonitoring)
+                  (script.id === 3 && cvsMonitoring) ||
+                  (script.id === 4 && hydrationMonitoring)
                     ? "contained" 
                     : "outlined"
                 }
@@ -906,7 +1153,8 @@ const ScriptRunner: React.FC = () => {
                     <CircularProgress size={20} /> : 
                     ((script.id === 1 && postureMonitoring) || 
                      (script.id === 2 && stressMonitoring) || 
-                     (script.id === 3 && cvsMonitoring)) 
+                     (script.id === 3 && cvsMonitoring) ||
+                     (script.id === 4 && hydrationMonitoring)) 
                       ? <StopIcon /> 
                       : script.icon
                 }
@@ -929,7 +1177,9 @@ const ScriptRunner: React.FC = () => {
                         ? 'Stop Stress Monitoring'
                         : script.id === 3 && cvsMonitoring
                           ? 'Stop Eye Strain Monitoring'
-                          : script.name
+                          : script.id === 4 && hydrationMonitoring
+                            ? 'Stop Hydration Monitoring'
+                            : script.name
                     }
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
@@ -937,7 +1187,8 @@ const ScriptRunner: React.FC = () => {
                   </Typography>
                   {((script.id === 1 && postureMonitoring) || 
                     (script.id === 2 && stressMonitoring) || 
-                    (script.id === 3 && cvsMonitoring)) && (
+                    (script.id === 3 && cvsMonitoring) ||
+                    (script.id === 4 && hydrationMonitoring)) && (
                     <Chip 
                       label="Active" 
                       color="success" 
@@ -1300,6 +1551,117 @@ const ScriptRunner: React.FC = () => {
                     ) : (
                       <Typography color="text.secondary">
                         No recent alerts. Healthy eye activity!
+                      </Typography>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          </Collapse>
+        </Paper>
+      )}
+
+      {/* Hydration Monitoring Dashboard */}
+      {hydrationMonitoring && (
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <LocalDrinkIcon color="info" /> Hydration Monitoring Dashboard
+            </Typography>
+            <IconButton onClick={() => setExpandedHydration(!expandedHydration)}>
+              {expandedHydration ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </IconButton>
+          </Box>
+
+          <Collapse in={expandedHydration}>
+            <Grid container spacing={2}>
+              {/* Current Status */}
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      Current Status (Last 5 minutes)
+                    </Typography>
+                    {hydrationData?.average ? (
+                      <Box>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Average Dryness Score</Typography>
+                          <Typography variant="body2" fontWeight="bold">
+                            {hydrationData.average.avg_dryness_score.toFixed(2)}
+                          </Typography>
+                        </Box>
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Dry Lips</Typography>
+                          <Typography variant="body2" fontWeight="bold" color="error.main">
+                            {hydrationData.average.dry_lips_percentage.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={hydrationData.average.dry_lips_percentage} 
+                          color="error"
+                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
+                        />
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Normal Lips</Typography>
+                          <Typography variant="body2" fontWeight="bold" color="success.main">
+                            {hydrationData.average.normal_lips_percentage.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={hydrationData.average.normal_lips_percentage} 
+                          color="success"
+                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
+                        />
+                        
+                        <Typography variant="caption" color="text.secondary">
+                          Total samples: {hydrationData.average.total_samples}
+                        </Typography>
+                        
+                        {hydrationData.average.dry_lips_percentage > 60 && (
+                          <Alert severity="warning" sx={{ mt: 2 }}>
+                            <strong>Warning:</strong> Dry lips detected! This indicates dehydration. Please drink some water.
+                          </Alert>
+                        )}
+                      </Box>
+                    ) : (
+                      <Typography color="text.secondary">
+                        Collecting data... Please wait for initial readings.
+                      </Typography>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Recent Alerts */}
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <NotificationsActiveIcon color="warning" /> Recent Alerts
+                    </Typography>
+                    {hydrationAlerts.length > 0 ? (
+                      <Stack spacing={1} sx={{ maxHeight: 200, overflowY: 'auto' }}>
+                        {hydrationAlerts.slice(0, 5).map((alert) => (
+                          <Alert 
+                            key={alert.id} 
+                            severity={alert.level as any}
+                          >
+                            <Typography variant="body2">
+                              {alert.message}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {new Date(alert.created_at).toLocaleTimeString()}
+                            </Typography>
+                          </Alert>
+                        ))}
+                      </Stack>
+                    ) : (
+                      <Typography color="text.secondary">
+                        No recent alerts. Good hydration!
                       </Typography>
                     )}
                   </CardContent>

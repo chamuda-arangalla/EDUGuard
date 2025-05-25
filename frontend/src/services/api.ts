@@ -559,4 +559,114 @@ export const cvsService = {
   }
 };
 
+// Hydration Monitoring endpoints (Lip Dryness Detection)
+export const hydrationService = {
+  startMonitoring: async (progressReportId?: string) => {
+    try {
+      const payload = progressReportId ? { progressReportId } : {};
+      const response = await api.post('/hydration/start', payload);
+      return response.data;
+    } catch (error: any) {
+      console.error('Start hydration monitoring error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not start hydration monitoring.' 
+      };
+    }
+  },
+  
+  stopMonitoring: async () => {
+    try {
+      const response = await api.post('/hydration/stop');
+      return response.data;
+    } catch (error: any) {
+      console.error('Stop hydration monitoring error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not stop hydration monitoring.' 
+      };
+    }
+  },
+  
+  getStatus: async () => {
+    try {
+      const response = await api.get('/hydration/status');
+      return response.data;
+    } catch (error: any) {
+      console.error('Get hydration status error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        data: { is_monitoring: false, webcam_server_active: false } 
+      };
+    }
+  },
+  
+  startWebcamServer: async () => {
+    try {
+      const response = await api.post('/hydration/webcam/start');
+      return response.data;
+    } catch (error: any) {
+      console.error('Start webcam server error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not start webcam server.' 
+      };
+    }
+  },
+  
+  stopWebcamServer: async () => {
+    try {
+      const response = await api.post('/hydration/webcam/stop');
+      return response.data;
+    } catch (error: any) {
+      console.error('Stop webcam server error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not stop webcam server.' 
+      };
+    }
+  },
+  
+  getRecentData: async (minutes = 5, includeAverage = true) => {
+    try {
+      const response = await api.get(
+        `/hydration/data/recent?minutes=${minutes}&includeAverage=${includeAverage}`
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error('Get hydration data error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        data: { predictions: [], average: null, minutes, user_id: null } 
+      };
+    }
+  },
+  
+  getRecentAlerts: async (limit = 20) => {
+    try {
+      const response = await api.get(`/hydration/alerts/recent?limit=${limit}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Get hydration alerts error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        data: { alerts: [], total_count: 0 } 
+      };
+    }
+  },
+  
+  triggerAlertCheck: async () => {
+    try {
+      const response = await api.post('/hydration/check-alerts');
+      return response.data;
+    } catch (error: any) {
+      console.error('Trigger alert check error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not trigger alert check.' 
+      };
+    }
+  }
+};
+
 export default api; 
