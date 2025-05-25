@@ -26,6 +26,12 @@ class AlertManager:
                 'bad_percentage_threshold': 60,  # Alert if >60% bad posture
                 'minimum_samples': 10,           # Need at least 10 samples
                 'cooldown_seconds': 300          # 5 minutes between alerts
+            },
+            'cvs': {
+                'high_blink_threshold': 20,      # Alert if >20 blinks/min (high)
+                'low_blink_threshold': 17,       # Alert if <17 blinks/min (low)
+                'minimum_samples': 5,            # Need at least 5 samples
+                'cooldown_seconds': 300          # 5 minutes between alerts
             }
         }
         self.last_alert_times = {}
@@ -106,6 +112,114 @@ class AlertManager:
         except Exception as e:
             logger.error(f"Error triggering immediate posture alert: {e}")
     
+    def check_cvs_alert(self):
+        """Check eye blink rate and generate alerts for Computer Vision Syndrome (CVS)"""
+        try:
+            # Get CVS (eye blink) average for the last 5 minutes
+            cvs_avg = self.db_manager.calculate_prediction_average('cvs', minutes=5)
+            
+            if not cvs_avg:
+                logger.debug("No eye blink data available for CVS alert check")
+                return
+                
+            avg_blink_count = cvs_avg.get('avg_blink_count', 0)
+            high_blink_percentage = cvs_avg.get('high_blink_percentage', 0)
+            low_blink_percentage = cvs_avg.get('low_blink_percentage', 0)
+            total_samples = cvs_avg.get('total_samples', 0)
+            
+            logger.debug(f"CVS check: Avg {avg_blink_count:.1f} blinks/min, {high_blink_percentage:.1f}% high, {low_blink_percentage:.1f}% low ({total_samples} samples)")
+            
+            # Only trigger if we have enough samples
+            if total_samples < self.alert_thresholds['cvs']['minimum_samples']:
+                logger.debug(f"Not enough samples for CVS alert ({total_samples} < {self.alert_thresholds['cvs']['minimum_samples']})")
+                return
+                
+            # Check for high blink rate (eye fatigue)
+            high_threshold = self.alert_thresholds['cvs']['high_blink_threshold']
+            if avg_blink_count > high_threshold and high_blink_percentage > 60:
+                cooldown = self.alert_thresholds['cvs']['cooldown_seconds']
+                if self._can_trigger_alert('high_blink_rate', cooldown):
+                    self.db_manager.save_alert(
+                        'cvs',
+                        f'High blink rate detected! Average {avg_blink_count:.1f} blinks/min indicates eye fatigue. Take a break.',
+                        'warning',
+                        {
+                            'avg_blink_count': avg_blink_count,
+                            'high_blink_percentage': high_blink_percentage,
+                            'total_samples': total_samples,
+                            'threshold': high_threshold,
+                            'alert_type': 'high_blink_rate'
+                        }
+                    )
+                    self._update_alert_time('high_blink_rate')
+                    logger.warning(f"🚨 High blink rate alert triggered: {avg_blink_count:.1f} blinks/min (threshold: {high_threshold})")
+                else:
+                    logger.debug(f"High blink rate detected but still in cooldown period")
+            
+            # Check for low blink rate (dry eyes)
+            low_threshold = self.alert_thresholds['cvs']['low_blink_threshold']
+            if avg_blink_count < low_threshold and low_blink_percentage > 60:
+                cooldown = self.alert_thresholds['cvs']['cooldown_seconds']
+                if self._can_trigger_alert('low_blink_rate', cooldown):
+                    self.db_manager.save_alert(
+                        'cvs',
+                        f'Low blink rate detected! Average {avg_blink_count:.1f} blinks/min indicates dry eyes. Take a break and rest your eyes.',
+                        'warning',
+                        {
+                            'avg_blink_count': avg_blink_count,
+                            'low_blink_percentage': low_blink_percentage,
+                            'total_samples': total_samples,
+                            'threshold': low_threshold,
+                            'alert_type': 'low_blink_rate'
+                        }
+                    )
+                    self._update_alert_time('low_blink_rate')
+                    logger.warning(f"🚨 Low blink rate alert triggered: {avg_blink_count:.1f} blinks/min (threshold: {low_threshold})")
+                else:
+                    logger.debug(f"Low blink rate detected but still in cooldown period")
+            
+            # If blink rate is normal, log it
+            if low_threshold <= avg_blink_count <= high_threshold:
+                logger.debug(f"Blink rate within normal range: {avg_blink_count:.1f} blinks/min")
+                
+        except Exception as e:
+            logger.error(f"Error checking CVS alert: {e}")
+    
+    def trigger_immediate_cvs_alert(self, blink_count, is_high=True, context_data=None):
+        """Directly trigger a CVS alert bypassing normal checks
+        
+        Args:
+            blink_count (float): The number of blinks per minute
+            is_high (bool): True if high blink rate, False if low blink rate
+            context_data (dict): Additional context data for the alert
+        """
+        try:
+            alert_type = 'high_blink_rate' if is_high else 'low_blink_rate'
+            alert_message = (f'High blink rate detected! {blink_count:.1f} blinks/min indicates eye fatigue. Take a break.' if is_high
+                             else f'Low blink rate detected! {blink_count:.1f} blinks/min indicates dry eyes. Take a break and rest your eyes.')
+            
+            alert_data = {
+                'blink_count': blink_count,
+                'alert_type': alert_type,
+                'trigger_type': 'immediate',
+                'timestamp': int(time.time() * 1000)
+            }
+            
+            if context_data:
+                alert_data.update(context_data)
+            
+            self.db_manager.save_alert(
+                'cvs',
+                alert_message,
+                'warning',
+                alert_data
+            )
+            
+            logger.warning(f"🚨 Immediate CVS alert triggered: {blink_count:.1f} blinks/min ({alert_type})")
+            
+        except Exception as e:
+            logger.error(f"Error triggering immediate CVS alert: {e}")
+    
     def _can_trigger_alert(self, alert_type, cooldown_seconds=300):
         """Check if enough time has passed to trigger an alert
         
@@ -145,15 +259,21 @@ class AlertManager:
             # Get recent alerts
             recent_alerts = self.db_manager.get_recent_alerts(limit=10)
             posture_alerts = [alert for alert in recent_alerts if alert.get('type') == 'posture']
+            cvs_alerts = [alert for alert in recent_alerts if alert.get('type') == 'cvs']
             
-            # Get posture statistics
+            # Get statistics
             posture_avg = self.db_manager.calculate_prediction_average('posture', minutes=5)
+            cvs_avg = self.db_manager.calculate_prediction_average('cvs', minutes=5)
             
             return {
                 'total_alerts': len(recent_alerts),
                 'posture_alerts': len(posture_alerts),
-                'recent_alerts': posture_alerts[:5],  # Last 5 posture alerts
+                'cvs_alerts': len(cvs_alerts),
+                'recent_alerts': recent_alerts[:5],  # Last 5 alerts
+                'recent_posture_alerts': posture_alerts[:5],  # Last 5 posture alerts
+                'recent_cvs_alerts': cvs_alerts[:5],  # Last 5 CVS alerts
                 'current_posture_stats': posture_avg,
+                'current_cvs_stats': cvs_avg,
                 'last_alert_times': self.last_alert_times.copy()
             }
             
@@ -163,7 +283,11 @@ class AlertManager:
                 'error': str(e),
                 'total_alerts': 0,
                 'posture_alerts': 0,
+                'cvs_alerts': 0,
                 'recent_alerts': [],
+                'recent_posture_alerts': [],
+                'recent_cvs_alerts': [],
                 'current_posture_stats': None,
+                'current_cvs_stats': None,
                 'last_alert_times': {}
             } 

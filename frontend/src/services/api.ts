@@ -449,4 +449,114 @@ export const stressService = {
   }
 };
 
+// CVS Monitoring endpoints (Eye Blink Detection)
+export const cvsService = {
+  startMonitoring: async (progressReportId?: string) => {
+    try {
+      const payload = progressReportId ? { progressReportId } : {};
+      const response = await api.post('/cvs/start', payload);
+      return response.data;
+    } catch (error: any) {
+      console.error('Start CVS monitoring error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not start CVS monitoring.' 
+      };
+    }
+  },
+  
+  stopMonitoring: async () => {
+    try {
+      const response = await api.post('/cvs/stop');
+      return response.data;
+    } catch (error: any) {
+      console.error('Stop CVS monitoring error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not stop CVS monitoring.' 
+      };
+    }
+  },
+  
+  getStatus: async () => {
+    try {
+      const response = await api.get('/cvs/status');
+      return response.data;
+    } catch (error: any) {
+      console.error('Get CVS status error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        data: { is_monitoring: false, webcam_server_active: false } 
+      };
+    }
+  },
+  
+  startWebcamServer: async () => {
+    try {
+      const response = await api.post('/cvs/webcam/start');
+      return response.data;
+    } catch (error: any) {
+      console.error('Start webcam server error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not start webcam server.' 
+      };
+    }
+  },
+  
+  stopWebcamServer: async () => {
+    try {
+      const response = await api.post('/cvs/webcam/stop');
+      return response.data;
+    } catch (error: any) {
+      console.error('Stop webcam server error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not stop webcam server.' 
+      };
+    }
+  },
+  
+  getRecentData: async (minutes = 5, includeAverage = true) => {
+    try {
+      const response = await api.get(
+        `/cvs/data/recent?minutes=${minutes}&includeAverage=${includeAverage}`
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error('Get CVS data error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        data: { predictions: [], average: null, minutes, user_id: null } 
+      };
+    }
+  },
+  
+  getRecentAlerts: async (limit = 20) => {
+    try {
+      const response = await api.get(`/cvs/alerts/recent?limit=${limit}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Get CVS alerts error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        data: { alerts: [], total_count: 0 } 
+      };
+    }
+  },
+  
+  triggerAlertCheck: async () => {
+    try {
+      const response = await api.post('/cvs/check-alerts');
+      return response.data;
+    } catch (error: any) {
+      console.error('Trigger alert check error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not trigger alert check.' 
+      };
+    }
+  }
+};
+
 export default api; 

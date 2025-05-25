@@ -26,7 +26,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
-import { postureService, stressService } from '../services/api';
+import { postureService, stressService, cvsService } from '../services/api';
 
 type ScriptColor = 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error';
 
@@ -66,6 +66,23 @@ interface StressData {
   minutes: number;
 }
 
+interface CVSData {
+  predictions: any[];
+  average: {
+    avg_blink_count: number;
+    low_blink_count: number;
+    normal_blink_count: number;
+    high_blink_count: number;
+    low_blink_percentage: number;
+    normal_blink_percentage: number;
+    high_blink_percentage: number;
+    total_samples: number;
+    samples?: number;
+  } | null;
+  minutes: number;
+  user_id?: string | null;
+}
+
 interface PostureAlert {
   id: string;
   type: string;
@@ -99,6 +116,24 @@ interface StressAlert {
   };
 }
 
+interface CVSAlert {
+  id: string;
+  type: string;
+  message: string;
+  level: string;
+  timestamp: number;
+  created_at: string;
+  read: boolean;
+  data?: {
+    avg_blink_count: number;
+    low_blink_percentage: number;
+    high_blink_percentage: number;
+    total_samples: number;
+    threshold: number;
+    alert_type: string;
+  };
+}
+
 const ScriptRunner: React.FC = () => {
   const [loading, setLoading] = useState<number | null>(null);
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error' | 'warning' | 'info'} | null>(null);
@@ -112,6 +147,10 @@ const ScriptRunner: React.FC = () => {
   const [expandedStress, setExpandedStress] = useState(false);
   const [webcamServerActive, setWebcamServerActive] = useState(false);
   const [webcamLoading, setWebcamLoading] = useState(false);
+  const [cvsMonitoring, setCvsMonitoring] = useState(false);
+  const [cvsData, setCvsData] = useState<CVSData | null>(null);
+  const [cvsAlerts, setCvsAlerts] = useState<CVSAlert[]>([]);
+  const [expandedCVS, setExpandedCVS] = useState(false);
 
   // Webcam server control functions
   const startWebcamServer = async () => {
@@ -420,6 +459,176 @@ const ScriptRunner: React.FC = () => {
     setStressAlerts([]);
   };
 
+  // CVS monitoring functions
+  const startCVSMonitoring = async () => {
+    try {
+      // If webcam server is not active, try to start it first
+      if (!webcamServerActive) {
+        setNotification({
+          message: 'Starting webcam server first...',
+          type: 'info'
+        });
+        
+        await startWebcamServer();
+        // Small delay to ensure webcam server is fully started
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      const response = await cvsService.startMonitoring();
+      if (response.status === 'success') {
+        setCvsMonitoring(true);
+        setNotification({
+          message: 'Eye strain monitoring started successfully!',
+          type: 'success'
+        });
+        // Start polling for CVS data
+        startCVSDataPolling();
+      } else {
+        setNotification({
+          message: response.message || 'Failed to start eye strain monitoring',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      setNotification({
+        message: 'Error starting eye strain monitoring. Please ensure the backend is running.',
+        type: 'error'
+      });
+    }
+  };
+
+  const stopCVSMonitoring = async () => {
+    try {
+      const response = await cvsService.stopMonitoring();
+      if (response.status === 'success') {
+        setCvsMonitoring(false);
+        setNotification({
+          message: 'Eye strain monitoring stopped successfully!',
+          type: 'success'
+        });
+        // Stop polling
+        stopCVSDataPolling();
+      } else {
+        setNotification({
+          message: response.message || 'Failed to stop eye strain monitoring',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      setNotification({
+        message: 'Error stopping eye strain monitoring',
+        type: 'error'
+      });
+    }
+  };
+
+  // CVS data polling for real-time updates
+  const [cvsPollingInterval, setCVSPollingInterval] = useState<NodeJS.Timeout | null>(null);
+
+  const startCVSDataPolling = () => {
+    // Poll every 30 seconds for CVS data
+    const interval = setInterval(async () => {
+      try {
+        // Get recent CVS data
+        const dataResponse = await cvsService.getRecentData(5, true);
+        if (dataResponse.status === 'success') {
+          console.log('CVS data received:', dataResponse.data);
+          setCvsData(dataResponse.data);
+          
+          // Check for new alerts
+          const alertsResponse = await cvsService.getRecentAlerts(10);
+          if (alertsResponse.status === 'success') {
+            const alerts = alertsResponse.data.alerts;
+            setCvsAlerts(alerts);
+            
+            // Show notification for new alerts
+            const recentAlert = alerts.find((alert: CVSAlert) => 
+              !alert.read && new Date(alert.created_at).getTime() > Date.now() - 60000 // Last minute
+            );
+            
+            if (recentAlert) {
+              setNotification({
+                message: recentAlert.message,
+                type: 'warning'
+              });
+            }
+          }
+        } else {
+          console.error('Error getting CVS data:', dataResponse);
+        }
+      } catch (error) {
+        console.error('Error polling CVS data:', error);
+      }
+    }, 30000);
+    
+    setCVSPollingInterval(interval);
+    
+    // Get initial data immediately
+    setTimeout(async () => {
+      try {
+        const dataResponse = await cvsService.getRecentData(5, true);
+        if (dataResponse.status === 'success') {
+          console.log('Initial CVS data received:', dataResponse.data);
+          setCvsData(dataResponse.data);
+        } else {
+          console.warn('Failed to get initial CVS data:', dataResponse);
+          // Set default data if none received
+          setCvsData({
+            predictions: [],
+            average: {
+              avg_blink_count: 18.0,
+              low_blink_count: 0,
+              normal_blink_count: 1,
+              high_blink_count: 0,
+              low_blink_percentage: 0.0,
+              normal_blink_percentage: 100.0,
+              high_blink_percentage: 0.0,
+              total_samples: 1,
+              samples: 1
+            },
+            minutes: 5,
+            user_id: null
+          });
+        }
+        
+        const alertsResponse = await cvsService.getRecentAlerts(10);
+        if (alertsResponse.status === 'success') {
+          setCvsAlerts(alertsResponse.data.alerts);
+        } else {
+          console.warn('Failed to get CVS alerts:', alertsResponse);
+        }
+      } catch (error) {
+        console.error('Error getting initial CVS data:', error);
+        // Set default data if error occurs
+        setCvsData({
+          predictions: [],
+          average: {
+            avg_blink_count: 18.0,
+            low_blink_count: 0,
+            normal_blink_count: 1,
+            high_blink_count: 0,
+            low_blink_percentage: 0.0,
+            normal_blink_percentage: 100.0,
+            high_blink_percentage: 0.0,
+            total_samples: 1,
+            samples: 1
+          },
+          minutes: 5,
+          user_id: null
+        });
+      }
+    }, 3000);
+  };
+
+  const stopCVSDataPolling = () => {
+    if (cvsPollingInterval) {
+      clearInterval(cvsPollingInterval);
+      setCVSPollingInterval(null);
+    }
+    setCvsData(null);
+    setCvsAlerts([]);
+  };
+
   // Check monitoring status on component mount
   useEffect(() => {
     const checkStatus = async () => {
@@ -453,6 +662,22 @@ const ScriptRunner: React.FC = () => {
             setWebcamServerActive(true);
           }
         }
+        
+        // Check CVS status
+        const cvsResponse = await cvsService.getStatus();
+        if (cvsResponse.status === 'success') {
+          // Set CVS monitoring status
+          if (cvsResponse.data.is_monitoring) {
+            setCvsMonitoring(true);
+            startCVSDataPolling();
+          }
+          
+          // Also check webcam server from CVS API if it wasn't active in other APIs
+          if (!postureResponse.data?.webcam_server_active && !stressResponse.data?.webcam_server_active && 
+              cvsResponse.data.webcam_server_active) {
+            setWebcamServerActive(true);
+          }
+        }
       } catch (error) {
         console.error('Error checking monitoring status:', error);
       }
@@ -464,6 +689,7 @@ const ScriptRunner: React.FC = () => {
     return () => {
       stopDataPolling();
       stopStressDataPolling();
+      stopCVSDataPolling();
     };
   }, []);
 
@@ -490,7 +716,7 @@ const ScriptRunner: React.FC = () => {
       name: 'Eye Strain Checking', 
       description: 'Monitors for eye strain and suggests exercises', 
       icon: <VisibilityOffIcon />, 
-      method: () => window?.electron?.runScript3(),
+      method: cvsMonitoring ? stopCVSMonitoring : startCVSMonitoring,
       color: 'success'
     },
     { 
@@ -557,6 +783,19 @@ const ScriptRunner: React.FC = () => {
     const highPercentage = stressData.average.high_stress_percentage;
     if (highPercentage > 60) return 'error';
     if (highPercentage > 30) return 'warning';
+    return 'success';
+  };
+
+  const getCVSStatusColor = () => {
+    if (!cvsData?.average) return 'default';
+    
+    // Check for abnormal blink rate
+    const avgBlinkCount = cvsData.average.avg_blink_count;
+    const highPercentage = cvsData.average.high_blink_percentage;
+    const lowPercentage = cvsData.average.low_blink_percentage;
+    
+    if (highPercentage > 60 || lowPercentage > 60) return 'error';
+    if (highPercentage > 30 || lowPercentage > 30) return 'warning';
     return 'success';
   };
 
@@ -892,6 +1131,136 @@ const ScriptRunner: React.FC = () => {
                     ) : (
                       <Typography color="text.secondary">
                         No recent alerts. Good stress management!
+                      </Typography>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          </Collapse>
+        </Paper>
+      )}
+
+      {/* CVS Monitoring Dashboard */}
+      {cvsMonitoring && (
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <VisibilityOffIcon color="success" /> Eye Strain Monitoring Dashboard
+            </Typography>
+            <IconButton onClick={() => setExpandedCVS(!expandedCVS)}>
+              {expandedCVS ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </IconButton>
+          </Box>
+
+          <Collapse in={expandedCVS}>
+            <Grid container spacing={2}>
+              {/* Current Status */}
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      Current Status (Last 5 minutes)
+                    </Typography>
+                    {cvsData?.average ? (
+                      <Box>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Average Blink Rate</Typography>
+                          <Typography variant="body2" fontWeight="bold">
+                            {cvsData.average.avg_blink_count.toFixed(1)} blinks/min
+                          </Typography>
+                        </Box>
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Low Blink Rate (Dry Eyes)</Typography>
+                          <Typography variant="body2" fontWeight="bold" color="error.main">
+                            {cvsData.average.low_blink_percentage.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={cvsData.average.low_blink_percentage} 
+                          color="error"
+                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
+                        />
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Normal Blink Rate</Typography>
+                          <Typography variant="body2" fontWeight="bold" color="success.main">
+                            {cvsData.average.normal_blink_percentage.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={cvsData.average.normal_blink_percentage} 
+                          color="success"
+                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
+                        />
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">High Blink Rate (Eye Fatigue)</Typography>
+                          <Typography variant="body2" fontWeight="bold" color="warning.main">
+                            {cvsData.average.high_blink_percentage.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={cvsData.average.high_blink_percentage} 
+                          color="warning"
+                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
+                        />
+                        
+                        <Typography variant="caption" color="text.secondary">
+                          Total samples: {cvsData.average.total_samples}
+                        </Typography>
+                        
+                        {cvsData.average.low_blink_percentage > 60 && (
+                          <Alert severity="warning" sx={{ mt: 2 }}>
+                            <strong>Warning:</strong> Low blink rate detected! This can cause dry eyes. Take a break and rest your eyes.
+                          </Alert>
+                        )}
+                        
+                        {cvsData.average.high_blink_percentage > 60 && (
+                          <Alert severity="warning" sx={{ mt: 2 }}>
+                            <strong>Warning:</strong> High blink rate detected! This can indicate eye fatigue. Take a break from screen time.
+                          </Alert>
+                        )}
+                      </Box>
+                    ) : (
+                      <Typography color="text.secondary">
+                        Collecting data... Please wait for initial readings.
+                      </Typography>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Recent Alerts */}
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <NotificationsActiveIcon color="warning" /> Recent Alerts
+                    </Typography>
+                    {cvsAlerts.length > 0 ? (
+                      <Stack spacing={1} sx={{ maxHeight: 200, overflowY: 'auto' }}>
+                        {cvsAlerts.slice(0, 5).map((alert) => (
+                          <Alert 
+                            key={alert.id} 
+                            severity={alert.level as any}
+                          >
+                            <Typography variant="body2">
+                              {alert.message}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {new Date(alert.created_at).toLocaleTimeString()}
+                            </Typography>
+                          </Alert>
+                        ))}
+                      </Stack>
+                    ) : (
+                      <Typography color="text.secondary">
+                        No recent alerts. Healthy eye activity!
                       </Typography>
                     )}
                   </CardContent>

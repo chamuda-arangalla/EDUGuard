@@ -12,6 +12,8 @@ from utils.database import DatabaseManager
 from posture_api import posture_bp
 # Import the stress API blueprint
 from stress_api import stress_bp
+# Import the CVS API blueprint
+from cvs_api import cvs_bp
 
 # Load environment variables
 load_dotenv()
@@ -31,6 +33,8 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 app.register_blueprint(posture_bp)
 # Register the stress API blueprint
 app.register_blueprint(stress_bp)
+# Register the CVS API blueprint
+app.register_blueprint(cvs_bp)
 
 def get_user_id_from_request():
     """Get the user ID from the request headers or parameters"""

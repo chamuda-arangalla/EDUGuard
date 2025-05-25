@@ -411,7 +411,45 @@ class DatabaseManager:
                     'total_samples': total_count,
                     'samples': len(predictions)
                 }
+            elif model_name == 'cvs':
+                # Calculate eye blink statistics
+                blink_values = [
+                    p.get('prediction', {}).get('blink_count', 0) 
+                    for p in predictions
+                ]
                 
+                if not blink_values:
+                    return None
+                
+                # Average blink count over the time period
+                total_blinks = sum(blink_values)
+                avg_blink_count = total_blinks / len(blink_values) if blink_values else 0
+                
+                # Categorize blink rates
+                # Low blink rate: < 17 blinks per minute (dry eyes)
+                # Normal blink rate: 17-20 blinks per minute
+                # High blink rate: > 20 blinks per minute (eye fatigue)
+                low_blink_count = sum(1 for blink in blink_values if blink < 17)
+                normal_blink_count = sum(1 for blink in blink_values if 17 <= blink <= 20)
+                high_blink_count = sum(1 for blink in blink_values if blink > 20)
+                total_count = len(blink_values)
+                
+                # Calculate percentages
+                low_percentage = (low_blink_count / total_count) * 100 if total_count > 0 else 0
+                normal_percentage = (normal_blink_count / total_count) * 100 if total_count > 0 else 0
+                high_percentage = (high_blink_count / total_count) * 100 if total_count > 0 else 0
+                
+                return {
+                    'avg_blink_count': avg_blink_count,
+                    'low_blink_count': low_blink_count,
+                    'normal_blink_count': normal_blink_count,
+                    'high_blink_count': high_blink_count,
+                    'low_blink_percentage': low_percentage,
+                    'normal_blink_percentage': normal_percentage,
+                    'high_blink_percentage': high_percentage,
+                    'total_samples': total_count,
+                    'samples': len(predictions)
+                }
             return None
         except Exception as e:
             logger.error(f"Error calculating prediction average: {e}")
