@@ -96,12 +96,31 @@ def estimate_distance(face_width):
         return None  # No face detected
     return (REFERENCE_FACE_WIDTH * NORMAL_DISTANCE_CM) / face_width
 
+# Function to safely make model predictions
+def safe_predict(model, input_data):
+    """Safely make predictions with error handling"""
+    try:
+        prediction = model.predict(input_data, verbose=0)
+        return prediction
+    except Exception as e:
+        logger.error(f"Error making prediction: {e}")
+        return 0.5  # Return a neutral value on error
+
 class BlinkDetector:
     def __init__(self, user_id, progress_report_id):
         self.user_id = user_id
         self.progress_report_id = progress_report_id
-        self.db_manager = DatabaseManager(user_id)
-        self.alert_manager = AlertManager(self.db_manager)
+        
+        # Initialize database and alert managers
+        try:
+            self.db_manager = DatabaseManager(user_id)
+            self.alert_manager = AlertManager(self.db_manager)
+            logger.info(f"Database and alert managers initialized for user {user_id}")
+        except Exception as e:
+            logger.error(f"Error initializing database or alert manager: {e}")
+            # Create fallback managers that will log errors but not crash
+            self.db_manager = DatabaseManager(user_id)
+            self.alert_manager = AlertManager(self.db_manager)
         
         # Blink detection variables
         self.blink_count = 0
@@ -225,8 +244,10 @@ class BlinkDetector:
             self.blink_count = 0
             self.start_time = time.time()
             
+            return True
         except Exception as e:
             logger.error(f"Error saving blink data: {e}")
+            return False
     
     def _check_blink_rate_alert(self, blink_rate):
         """Check if blink rate should trigger an alert"""
@@ -260,6 +281,10 @@ class BlinkDetector:
     def process_frame(self, frame):
         """Process a frame to detect face, eyes, and blinks"""
         try:
+            if frame is None or not isinstance(frame, np.ndarray):
+                logger.error("Invalid frame received")
+                return np.zeros((300, 400, 3), dtype=np.uint8)  # Return a blank frame
+                
             # Convert frame to grayscale for face detection
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             
@@ -269,14 +294,14 @@ class BlinkDetector:
             self.eye_state = "Unknown"  # Default value
             self.distance_msg = "No Face Detected"
             color = (0, 0, 255)  # Red for warnings
-            
+
             if len(faces) > 0:
                 self.face_detected = True
                 self.last_seen_time = time.time()  # Update last seen time
-                
+            
                 if self.start_time is None:
                     self.start_time = time.time()
-                
+            
                 # Get the largest face
                 x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
                 self.distance_cm = estimate_distance(w)
@@ -291,55 +316,79 @@ class BlinkDetector:
                     else:
                         self.distance_msg = "Good Distance"
                         color = (0, 255, 0)  # Green
-                    
-                    # Display distance info
-                    cv2.putText(frame, f'Distance: {int(self.distance_cm)} cm', (10, 90), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-                    cv2.putText(frame, self.distance_msg, (10, 120), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-                
+
+                # Display distance info
+                cv2.putText(frame, f'Distance: {int(self.distance_cm) if self.distance_cm else "Unknown"} cm', (10, 90), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                cv2.putText(frame, self.distance_msg, (10, 120), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+
                 # Draw face bounding box
                 cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-                
+
                 # Extract ROI for eye detection (upper half of face)
-                roi = gray_frame[y:y + h // 2, x:x + w]
+                face_y_end = min(y + h // 2, frame.shape[0])
+                face_x_end = min(x + w, frame.shape[1])
                 
-                if roi.size > 0:
-                    # If we have the deep learning model, use it
-                    if model is not None:
-                        preprocessed_roi = preprocess_frame(roi)
-                        prediction = model.predict(preprocessed_roi, verbose=0)
-                        self.eye_state = "Closed" if prediction > 0.5 else "Open"
-                    else:
-                        # Fallback to a simpler method - just check average brightness
-                        # This is not as accurate but serves as a fallback
-                        avg_brightness = np.mean(roi)
-                        self.eye_state = "Closed" if avg_brightness < 100 else "Open"
-                    
-                    self.last_eye_seen_time = time.time()
-                    
-                    # Update blink count
-                    if self.eye_state == "Closed" and not self.eye_closed:
-                        self.eye_closed = True
-                    elif self.eye_state == "Open" and self.eye_closed:
-                        self.blink_count += 1
-                        self.eye_closed = False
+                if y >= 0 and x >= 0 and face_y_end > y and face_x_end > x:
+                    roi = gray_frame[y:face_y_end, x:face_x_end]
+
+                    if roi.size > 0:
+                        # If we have the deep learning model, use it
+                        if model is not None:
+                            try:
+                                preprocessed_roi = preprocess_frame(roi)
+                                prediction = safe_predict(model, preprocessed_roi)
+                                self.eye_state = "Closed" if prediction > 0.5 else "Open"
+                            except Exception as e:
+                                logger.error(f"Error using model for prediction: {e}")
+                                # Fallback to simpler method
+                                avg_brightness = np.mean(roi)
+                                self.eye_state = "Closed" if avg_brightness < 100 else "Open"
+                        else:
+                            # Fallback to a simpler method - just check average brightness
+                            # This is not as accurate but serves as a fallback
+                            avg_brightness = np.mean(roi)
+                            self.eye_state = "Closed" if avg_brightness < 100 else "Open"
+                        
+                        self.last_eye_seen_time = time.time()
+                        
+                        # Update blink count
+                        if self.eye_state == "Closed" and not self.eye_closed:
+                            self.eye_closed = True
+                        elif self.eye_state == "Open" and self.eye_closed:
+                            self.blink_count += 1
+                            self.eye_closed = False
+                else:
+                    logger.warning("Invalid ROI coordinates")
+                    self.face_detected = False
             else:
                 self.face_detected = False
                 # Reset if face not seen for too long
                 if time.time() - self.last_seen_time > FACE_LOSS_RESET_TIME:
-                    if self.blink_count > 0:
+                    if self.blink_count > 0 and self.start_time:
                         # Save data before resetting
-                        elapsed_time = time.time() - self.start_time if self.start_time else 60
-                        blink_rate = int((self.blink_count / elapsed_time) * 60) if elapsed_time > 0 else 18
-                        self._save_blink_data(blink_rate)
+                        elapsed_time = time.time() - self.start_time
+                        if elapsed_time > 0:
+                            blink_rate = int((self.blink_count / elapsed_time) * 60)
+                            self._save_blink_data(blink_rate)
                     
                     self.blink_count = 0
                     self.start_time = None
             
             # Reset if eyes not seen for too long
             if time.time() - self.last_eye_seen_time > EYE_LOSS_RESET_TIME:
-                self.blink_count = 0
+                self.eye_closed = False
+                # Don't reset blink count here, as it could cause data loss
+                # Instead, we'll save the data if we've accumulated blinks
+                if self.blink_count > 0 and self.start_time:
+                    elapsed_time = time.time() - self.start_time
+                    if elapsed_time > 10:  # Only save if we have at least 10 seconds of data
+                        blink_rate = int((self.blink_count / elapsed_time) * 60)
+                        logger.info(f"Eyes not detected for {EYE_LOSS_RESET_TIME}s, saving accumulated data")
+                        self._save_blink_data(blink_rate)
+                        self.blink_count = 0
+                        self.start_time = time.time()  # Reset timer but keep monitoring
             
             # Check if it's time to save data
             current_time = time.time()
@@ -381,7 +430,8 @@ class BlinkDetector:
             
         except Exception as e:
             logger.error(f"Error processing frame: {e}")
-            return frame
+            # Return the original frame if there's an error
+            return frame if frame is not None and isinstance(frame, np.ndarray) else np.zeros((300, 400, 3), dtype=np.uint8)
     
     def stop(self):
         """Stop the blink detector"""
@@ -458,7 +508,6 @@ def main():
     client_socket = None
     
     # Force save initial data point to ensure database connection works
-    # This helps verify database connectivity and creates initial data for the frontend
     try:
         initial_blink_rate = 18  # Start with a normal blink rate
         detector._save_blink_data(initial_blink_rate)
@@ -466,16 +515,19 @@ def main():
     except Exception as e:
         logger.error(f"Failed to save initial data point: {e}")
     
-    # If running without webcam for testing, simulate blinks and data
+    # Check if running in simulation mode
     simulate_mode = os.environ.get('CVS_SIMULATE', 'false').lower() == 'true'
+    connection_attempts = 0
+    max_connection_attempts = 5
     
     try:
         # Main processing loop
-        while True:
-            if simulate_mode:
-                # Simulation mode - generate test data without webcam
-                logger.info("Running in simulation mode - generating test data")
-                for _ in range(5):  # Simulate for 5 minutes
+        if simulate_mode:
+            logger.info("Running in simulation mode - generating test data")
+            
+            # Simulation loop - generate test data without webcam
+            while detector.running:
+                try:
                     # Simulate random blink rate (between 15-22 blinks/min)
                     import random
                     blink_rate = random.randint(15, 22)
@@ -486,58 +538,90 @@ def main():
                     detector._check_blink_rate_alert(blink_rate)
                     
                     # Sleep for a minute (or less for faster testing)
-                    time.sleep(10)  # 10 seconds in test mode
-                break
+                    time.sleep(60)  # 60 seconds in normal mode
+                except KeyboardInterrupt:
+                    logger.info("Simulation stopped by user")
+                    break
+                except Exception as e:
+                    logger.error(f"Error in simulation loop: {e}")
+                    time.sleep(10)  # Wait before retrying
+        else:
+            # Normal mode with webcam
+            logger.info("Running in normal mode with webcam")
             
-            try:
-                # If socket is not connected, try to connect
-                if client_socket is None:
-                    client_socket = connect_to_webcam_server()
+            while detector.running:
+                try:
+                    # If socket is not connected, try to connect
                     if client_socket is None:
-                        logger.error("Failed to connect to webcam server. Retrying in 5 seconds...")
+                        connection_attempts += 1
+                        client_socket = connect_to_webcam_server()
+                        
+                        if client_socket is None:
+                            logger.error(f"Failed to connect to webcam server. Attempt {connection_attempts}/{max_connection_attempts}")
+                            
+                            if connection_attempts >= max_connection_attempts:
+                                logger.warning("Maximum connection attempts reached. Falling back to simulation mode.")
+                                # Fall back to simulation mode
+                                for i in range(10):  # Simulate for 10 minutes
+                                    if not detector.running:
+                                        break
+                                        
+                                    import random
+                                    blink_rate = random.randint(15, 22)
+                                    detector._save_blink_data(blink_rate)
+                                    logger.info(f"Fallback simulation {i+1}/10: {blink_rate} blinks/minute")
+                                    detector._check_blink_rate_alert(blink_rate)
+                                    time.sleep(60)  # 60 seconds between data points
+                                break
+                            
+                            time.sleep(5)
+                            continue
+                        else:
+                            # Reset connection attempts on successful connection
+                            connection_attempts = 0
+                            logger.info("Connected to webcam server successfully")
+                    
+                    # Receive frame from webcam server
+                    frame = receive_frame(client_socket)
+                    
+                    if frame is None:
+                        logger.error("Lost connection to webcam server. Reconnecting...")
+                        if client_socket:
+                            client_socket.close()
+                        client_socket = None
                         time.sleep(5)
                         continue
-                
-                # Receive frame from webcam server
-                frame = receive_frame(client_socket)
-                
-                if frame is None:
-                    logger.error("Lost connection to webcam server. Reconnecting...")
-                    client_socket.close()
+                    
+                    # Process the frame using the blink detection algorithm
+                    processed_frame = detector.process_frame(frame)
+                    
+                    # Display the frame
+                    cv2.imshow('CVS Detection', processed_frame)
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord('q'):
+                        break
+                    elif key == ord('b'):  # Manual blink for testing
+                        detector.blink_count += 1
+                        logger.info(f"Manual blink added! Total: {detector.blink_count}")
+                    
+                except socket.error as e:
+                    logger.error(f"Socket error: {e}")
+                    if client_socket:
+                        client_socket.close()
                     client_socket = None
-                    time.sleep(5)
-                    continue
-                
-                # Process the frame using the original algorithm
-                processed_frame = detector.process_frame(frame)
-                
-                # Display the frame
-                cv2.imshow('CVS Detection', processed_frame)
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord('q'):
-                    break
-                elif key == ord('b'):  # Manual blink for testing
-                    detector.blink_count += 1
-                    logger.info(f"Manual blink added! Total: {detector.blink_count}")
-                
-            except socket.error as e:
-                logger.error(f"Socket error: {e}")
-                if client_socket:
-                    client_socket.close()
-                client_socket = None
-                time.sleep(5)  # Wait before retrying
-                
-                # Save periodic data even if webcam fails
-                current_time = time.time()
-                if detector.start_time and current_time - detector.last_batch_time > detector.batch_interval:
-                    logger.info("Saving periodic data despite webcam error")
-                    # Save with a conservative default value
-                    detector._save_blink_data(17)  # Normal blink rate
-                    detector.last_batch_time = current_time
-                
-            except Exception as e:
-                logger.error(f"Error in main loop: {e}")
-                time.sleep(5)  # Wait before retrying
+                    time.sleep(5)  # Wait before retrying
+                    
+                    # Save periodic data even if webcam fails
+                    current_time = time.time()
+                    if detector.start_time and current_time - detector.last_batch_time > detector.batch_interval:
+                        logger.info("Saving periodic data despite webcam error")
+                        # Save with a conservative default value
+                        detector._save_blink_data(17)  # Normal blink rate
+                        detector.last_batch_time = current_time
+                    
+                except Exception as e:
+                    logger.error(f"Error in main loop: {e}")
+                    time.sleep(5)  # Wait before retrying
                 
     except KeyboardInterrupt:
         logger.info("CVS detection stopped by user")

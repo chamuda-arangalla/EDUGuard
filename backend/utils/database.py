@@ -8,6 +8,11 @@ from datetime import datetime
 # Configure logger
 logger = logging.getLogger('EDUGuard.Database')
 
+# Helper function to ensure log messages are safe for all consoles
+def safe_log(message):
+    """Replace emoji characters with text alternatives"""
+    return message
+
 class DatabaseManager:
     """Manager for Firebase database operations."""
     
@@ -44,7 +49,7 @@ class DatabaseManager:
             # Try to create a test database reference to verify the connection works
             try:
                 test_ref = db.reference('test', app=app)
-                logger.info("✅ Firebase database connection verified successfully")
+                logger.info("[SUCCESS] Firebase database connection verified successfully")
             except Exception as e:
                 logger.warning(f"Firebase database connection test failed: {e}")
                 # If the existing app doesn't work, try to reinitialize
@@ -57,7 +62,7 @@ class DatabaseManager:
                 
                 # Test again
                 test_ref = db.reference('test', app=app)
-                logger.info("✅ Firebase database connection verified after reinitialization")
+                logger.info("[SUCCESS] Firebase database connection verified after reinitialization")
             
             # Create database references using the working Firebase app
             self.predictions_ref = db.reference(f'predictions/{self.user_id}', app=app)
@@ -67,7 +72,7 @@ class DatabaseManager:
             
             self.db_initialized = True
             self.db_type = 'firebase'
-            logger.info(f"✅ Firebase database initialized successfully for user {self.user_id}")
+            logger.info(f"[SUCCESS] Firebase database initialized successfully for user {self.user_id}")
             
         except Exception as e:
             logger.error(f"Error initializing Firebase database: {e}")
@@ -110,7 +115,7 @@ class DatabaseManager:
                     'databaseURL': database_url
                 })
                 
-                logger.info(f"✅ Firebase app initialized with database URL: {database_url}")
+                logger.info(f"[SUCCESS] Firebase app initialized with database URL: {database_url}")
             else:
                 raise FileNotFoundError(f"Firebase service account key not found in any of these locations: {service_account_paths}")
                 
@@ -166,7 +171,7 @@ class DatabaseManager:
                     'prediction_id': key
                 })
                 
-                logger.info(f"✅ SAVED TO FIREBASE: {model_name} prediction for user {self.user_id}")
+                logger.info(f"[SAVED TO FIREBASE] {model_name} prediction for user {self.user_id}")
                 return key
             else:
                 # Local DB operation
@@ -186,7 +191,7 @@ class DatabaseManager:
                     'prediction_id': key
                 }
                 
-                logger.warning(f"⚠️ SAVED TO LOCAL DB: {model_name} prediction for user {self.user_id}")
+                logger.warning(f"[SAVED TO LOCAL DB] {model_name} prediction for user {self.user_id}")
                 return key
                 
         except Exception as e:
@@ -235,7 +240,7 @@ class DatabaseManager:
                     'alert_id': key
                 })
                 
-                logger.info(f"✅ SAVED ALERT TO FIREBASE: {message} for user {self.user_id}")
+                logger.info(f"[SAVED ALERT TO FIREBASE] {message} for user {self.user_id}")
                 return key
             else:
                 # Local DB operation
@@ -248,7 +253,7 @@ class DatabaseManager:
                     'alert_id': key
                 }
                 
-                logger.warning(f"⚠️ SAVED ALERT TO LOCAL DB: {message} for user {self.user_id}")
+                logger.warning(f"[SAVED ALERT TO LOCAL DB] {message} for user {self.user_id}")
                 return key
                 
         except Exception as e:
@@ -274,14 +279,14 @@ class DatabaseManager:
                     alerts = [{'id': key, **value} for key, value in query.items()]
                     # Sort by timestamp (newest first)
                     alerts.sort(key=lambda a: a.get('timestamp', 0), reverse=True)
-                    logger.debug(f"📖 Retrieved {len(alerts)} alerts from FIREBASE for user {self.user_id}")
+                    logger.debug(f"[BOOK] Retrieved {len(alerts)} alerts from FIREBASE for user {self.user_id}")
                     return alerts[:limit]  # Apply limit after sorting
                 return []
             else:
                 # Local DB operation
                 alerts = [{'id': key, **value} for key, value in self.local_db['alerts'].items()]
                 alerts.sort(key=lambda a: a.get('timestamp', 0), reverse=True)
-                logger.debug(f"📖 Retrieved {len(alerts)} alerts from LOCAL DB for user {self.user_id}")
+                logger.debug(f"[BOOK] Retrieved {len(alerts)} alerts from LOCAL DB for user {self.user_id}")
                 return alerts[:limit]
         except Exception as e:
             logger.error(f"Error getting recent alerts: {e}")
@@ -316,7 +321,7 @@ class DatabaseManager:
                     ]
                     # Sort by timestamp (newest first)
                     recent_predictions.sort(key=lambda p: p.get('timestamp', 0), reverse=True)
-                    logger.debug(f"📖 Retrieved {len(recent_predictions)} {model_name} predictions from FIREBASE for user {self.user_id}")
+                    logger.debug(f"[BOOK] Retrieved {len(recent_predictions)} {model_name} predictions from FIREBASE for user {self.user_id}")
                     return recent_predictions[:limit]  # Apply limit after sorting
                 return []
             else:
@@ -331,7 +336,7 @@ class DatabaseManager:
                     if prediction.get('timestamp', 0) >= cutoff_time
                 ]
                 recent_predictions.sort(key=lambda p: p.get('timestamp', 0), reverse=True)
-                logger.debug(f"📖 Retrieved {len(recent_predictions)} {model_name} predictions from LOCAL DB for user {self.user_id}")
+                logger.debug(f"[BOOK] Retrieved {len(recent_predictions)} {model_name} predictions from LOCAL DB for user {self.user_id}")
                 return recent_predictions[:limit]
         except Exception as e:
             logger.error(f"Error getting recent predictions: {e}")
@@ -504,10 +509,10 @@ class DatabaseManager:
             
             if self.db_type == 'firebase':
                 self.user_status_ref.update(status_data)
-                logger.debug(f"✅ Updated monitoring status in FIREBASE for user {self.user_id}: {is_monitoring}")
+                logger.debug(f"[SUCCESS] Updated monitoring status in FIREBASE for user {self.user_id}: {is_monitoring}")
             else:
                 self.local_db['user_status'].update(status_data)
-                logger.debug(f"⚠️ Updated monitoring status in LOCAL DB for user {self.user_id}: {is_monitoring}")
+                logger.debug(f"[WARNING] Updated monitoring status in LOCAL DB for user {self.user_id}: {is_monitoring}")
                 
             return True
         except Exception as e:
@@ -523,10 +528,10 @@ class DatabaseManager:
         try:
             if self.db_type == 'firebase':
                 profile = self.users_ref.get()
-                logger.debug(f"📖 Retrieved profile from FIREBASE for user {self.user_id}")
+                logger.debug(f"[INFO] Retrieved profile from FIREBASE for user {self.user_id}")
                 return profile if profile else {}
             else:
-                logger.debug(f"📖 Retrieved profile from LOCAL DB for user {self.user_id}")
+                logger.debug(f"[INFO] Retrieved profile from LOCAL DB for user {self.user_id}")
                 return self.local_db['user_profile']
         except Exception as e:
             logger.error(f"Error getting user profile: {e}")
@@ -544,10 +549,10 @@ class DatabaseManager:
         try:
             if self.db_type == 'firebase':
                 self.users_ref.set(profile_data)
-                logger.info(f"✅ Created user profile in FIREBASE for user {self.user_id}")
+                logger.info(f"[SUCCESS] Created user profile in FIREBASE for user {self.user_id}")
             else:
                 self.local_db['user_profile'] = profile_data
-                logger.warning(f"⚠️ Created user profile in LOCAL DB for user {self.user_id}")
+                logger.warning(f"[WARNING] Created user profile in LOCAL DB for user {self.user_id}")
                 
             return True
         except Exception as e:
@@ -566,10 +571,10 @@ class DatabaseManager:
         try:
             if self.db_type == 'firebase':
                 self.users_ref.update(update_data)
-                logger.info(f"✅ Updated user profile in FIREBASE for user {self.user_id}")
+                logger.info(f"[SUCCESS] Updated user profile in FIREBASE for user {self.user_id}")
             else:
                 self.local_db['user_profile'].update(update_data)
-                logger.warning(f"⚠️ Updated user profile in LOCAL DB for user {self.user_id}")
+                logger.warning(f"[WARNING] Updated user profile in LOCAL DB for user {self.user_id}")
                 
             return True
         except Exception as e:

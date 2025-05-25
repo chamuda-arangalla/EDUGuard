@@ -48,11 +48,11 @@ def initialize_firebase():
             'databaseURL': firebase_db_url
         })
         
-        print("✅ Firebase initialized successfully for EDUGuard")
+        print("[OK] Firebase initialized successfully for EDUGuard")
         return True
         
     except Exception as e:
-        print(f"❌ Error initializing Firebase: {e}")
+        print(f"[ERROR] Error initializing Firebase: {e}")
         return False
 
 def get_db_reference(path):
@@ -76,9 +76,9 @@ if __name__ != "__main__":
     try:
         firebase_available = initialize_firebase()
         if firebase_available:
-            print("🔥 Firebase is ready for EDUGuard operations")
+            print("[READY] Firebase is ready for EDUGuard operations")
         else:
-            print("⚠️ Firebase initialization failed - using local fallback")
+            print("[WARNING] Firebase initialization failed - using local fallback")
     except Exception as e:
         print(f"Warning: Firebase initialization failed: {e}")
         print("System will use local database for testing.")

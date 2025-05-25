@@ -1,4 +1,12 @@
+/**
+ * ScriptRunner Component
+ * 
+ * This component manages the health monitoring tools in the EDUGuard application,
+ * including posture, stress, eye strain, and hydration monitoring.
+ */
 import React, { useState, useEffect } from 'react';
+
+// Material UI Components
 import { 
   Box, 
   Button, 
@@ -16,6 +24,8 @@ import {
   IconButton,
   Collapse
 } from '@mui/material';
+
+// Material UI Icons
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import AccessibilityNewIcon from '@mui/icons-material/AccessibilityNew';
@@ -26,8 +36,13 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
+
+// API Services
 import { postureService, stressService, cvsService, hydrationService } from '../services/api';
 
+// -----------------------------------------------------------------------------
+// Types
+// -----------------------------------------------------------------------------
 type ScriptColor = 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error';
 
 interface Script {
@@ -165,30 +180,54 @@ interface HydrationAlert {
   };
 }
 
+/**
+ * ScriptRunner Component
+ * 
+ * Manages the health monitoring tools in the application
+ */
 const ScriptRunner: React.FC = () => {
+  // -----------------------------------------------------------------------------
+  // State Variables
+  // -----------------------------------------------------------------------------
+  // General state
   const [loading, setLoading] = useState<number | null>(null);
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error' | 'warning' | 'info'} | null>(null);
+  const [webcamServerActive, setWebcamServerActive] = useState(false);
+  const [webcamLoading, setWebcamLoading] = useState(false);
+  
+  // Posture monitoring state
   const [postureMonitoring, setPostureMonitoring] = useState(false);
   const [postureData, setPostureData] = useState<PostureData | null>(null);
   const [postureAlerts, setPostureAlerts] = useState<PostureAlert[]>([]);
-  const [expandedPosture, setExpandedPosture] = useState(false);
+  const [expandedPosture, setExpandedPosture] = useState(true);
+  
+  // Stress monitoring state
   const [stressMonitoring, setStressMonitoring] = useState(false);
   const [stressData, setStressData] = useState<StressData | null>(null);
   const [stressAlerts, setStressAlerts] = useState<StressAlert[]>([]);
-  const [expandedStress, setExpandedStress] = useState(false);
-  const [webcamServerActive, setWebcamServerActive] = useState(false);
-  const [webcamLoading, setWebcamLoading] = useState(false);
+  const [expandedStress, setExpandedStress] = useState(true);
+  
+  // CVS (eye strain) monitoring state
   const [cvsMonitoring, setCvsMonitoring] = useState(false);
   const [cvsData, setCvsData] = useState<CVSData | null>(null);
   const [cvsAlerts, setCvsAlerts] = useState<CVSAlert[]>([]);
-  const [expandedCVS, setExpandedCVS] = useState(false);
-  // New state variables for hydration monitoring
+  const [expandedCVS, setExpandedCVS] = useState(true);
+  
+  // Hydration monitoring state
   const [hydrationMonitoring, setHydrationMonitoring] = useState(false);
   const [hydrationData, setHydrationData] = useState<HydrationData | null>(null);
   const [hydrationAlerts, setHydrationAlerts] = useState<HydrationAlert[]>([]);
-  const [expandedHydration, setExpandedHydration] = useState(false);
+  const [expandedHydration, setExpandedHydration] = useState(true);
+  
+  // Polling intervals
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  const [stressPollingInterval, setStressPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  const [cvsPollingInterval, setCVSPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  const [hydrationPollingInterval, setHydrationPollingInterval] = useState<NodeJS.Timeout | null>(null);
 
-  // Webcam server control functions
+  // -----------------------------------------------------------------------------
+  // Webcam Server Control Functions
+  // -----------------------------------------------------------------------------
   const startWebcamServer = async () => {
     try {
       setWebcamLoading(true);
@@ -241,7 +280,9 @@ const ScriptRunner: React.FC = () => {
     }
   };
 
-  // Enhanced posture monitoring functions
+  // -----------------------------------------------------------------------------
+  // Posture Monitoring Functions
+  // -----------------------------------------------------------------------------
   const startPostureMonitoring = async () => {
     try {
       // If webcam server is not active, try to start it first
@@ -304,7 +345,71 @@ const ScriptRunner: React.FC = () => {
     }
   };
 
-  // Stress monitoring functions
+  // Data polling for real-time posture updates
+  const startDataPolling = () => {
+    // Poll every 30 seconds for posture data
+    const interval = setInterval(async () => {
+      try {
+        // Get recent posture data
+        const dataResponse = await postureService.getRecentData(5, true);
+        if (dataResponse.status === 'success') {
+          setPostureData(dataResponse.data);
+          
+          // Check for new alerts
+          const alertsResponse = await postureService.getRecentAlerts(10);
+          if (alertsResponse.status === 'success') {
+            const alerts = alertsResponse.data.alerts;
+            setPostureAlerts(alerts);
+            
+            // Show notification for new alerts
+            const recentAlert = alerts.find((alert: PostureAlert) => 
+              !alert.read && new Date(alert.created_at).getTime() > Date.now() - 60000 // Last minute
+            );
+            
+            if (recentAlert) {
+              setNotification({
+                message: recentAlert.message,
+                type: 'warning'
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error polling posture data:', error);
+      }
+    }, 30000);
+    
+    setPollingInterval(interval);
+    
+    // Get initial data immediately
+    setTimeout(async () => {
+      try {
+        const dataResponse = await postureService.getRecentData(5, true);
+        if (dataResponse.status === 'success') {
+          setPostureData(dataResponse.data);
+        }
+        const alertsResponse = await postureService.getRecentAlerts(10);
+        if (alertsResponse.status === 'success') {
+          setPostureAlerts(alertsResponse.data.alerts);
+        }
+      } catch (error) {
+        console.error('Error getting initial posture data:', error);
+      }
+    }, 3000);
+  };
+
+  const stopDataPolling = () => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      setPollingInterval(null);
+    }
+    setPostureData(null);
+    setPostureAlerts([]);
+  };
+
+  // -----------------------------------------------------------------------------
+  // Stress Monitoring Functions
+  // -----------------------------------------------------------------------------
   const startStressMonitoring = async () => {
     try {
       // If webcam server is not active, try to start it first
@@ -367,73 +472,7 @@ const ScriptRunner: React.FC = () => {
     }
   };
 
-  // Data polling for real-time updates
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
-
-  const startDataPolling = () => {
-    // Poll every 30 seconds for posture data
-    const interval = setInterval(async () => {
-      try {
-        // Get recent posture data
-        const dataResponse = await postureService.getRecentData(5, true);
-        if (dataResponse.status === 'success') {
-          setPostureData(dataResponse.data);
-          
-          // Check for new alerts
-          const alertsResponse = await postureService.getRecentAlerts(10);
-          if (alertsResponse.status === 'success') {
-            const alerts = alertsResponse.data.alerts;
-            setPostureAlerts(alerts);
-            
-            // Show notification for new alerts
-            const recentAlert = alerts.find((alert: PostureAlert) => 
-              !alert.read && new Date(alert.created_at).getTime() > Date.now() - 60000 // Last minute
-            );
-            
-            if (recentAlert) {
-              setNotification({
-                message: recentAlert.message,
-                type: 'warning'
-              });
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error polling posture data:', error);
-      }
-    }, 30000);
-    
-    setPollingInterval(interval);
-    
-    // Get initial data immediately
-    setTimeout(async () => {
-      try {
-        const dataResponse = await postureService.getRecentData(5, true);
-        if (dataResponse.status === 'success') {
-          setPostureData(dataResponse.data);
-        }
-        const alertsResponse = await postureService.getRecentAlerts(10);
-        if (alertsResponse.status === 'success') {
-          setPostureAlerts(alertsResponse.data.alerts);
-        }
-      } catch (error) {
-        console.error('Error getting initial posture data:', error);
-      }
-    }, 3000);
-  };
-
-  const stopDataPolling = () => {
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
-      setPollingInterval(null);
-    }
-    setPostureData(null);
-    setPostureAlerts([]);
-  };
-
   // Stress data polling for real-time updates
-  const [stressPollingInterval, setStressPollingInterval] = useState<NodeJS.Timeout | null>(null);
-
   const startStressDataPolling = () => {
     // Poll every 30 seconds for stress data
     const interval = setInterval(async () => {
@@ -495,7 +534,9 @@ const ScriptRunner: React.FC = () => {
     setStressAlerts([]);
   };
 
-  // CVS monitoring functions
+  // -----------------------------------------------------------------------------
+  // CVS Monitoring Functions
+  // -----------------------------------------------------------------------------
   const startCVSMonitoring = async () => {
     try {
       // If webcam server is not active, try to start it first
@@ -559,8 +600,6 @@ const ScriptRunner: React.FC = () => {
   };
 
   // CVS data polling for real-time updates
-  const [cvsPollingInterval, setCVSPollingInterval] = useState<NodeJS.Timeout | null>(null);
-
   const startCVSDataPolling = () => {
     // Poll every 30 seconds for CVS data
     const interval = setInterval(async () => {
@@ -665,41 +704,111 @@ const ScriptRunner: React.FC = () => {
     setCvsAlerts([]);
   };
 
-  // Hydration monitoring functions
+  // -----------------------------------------------------------------------------
+  // Hydration Monitoring Functions
+  // -----------------------------------------------------------------------------
   const startHydrationMonitoring = async () => {
+    setLoading(4); // Use numeric ID for hydration monitoring
     try {
-      // If webcam server is not active, try to start it first
+      // First check if webcam server is running
+      const statusResponse = await hydrationService.getStatus();
+      const webcamServerActive = statusResponse?.data?.webcam_server_active || false;
+      
       if (!webcamServerActive) {
         setNotification({
-          message: 'Starting webcam server first...',
+          message: 'Starting webcam server for hydration monitoring...',
           type: 'info'
         });
         
-        await startWebcamServer();
-        // Small delay to ensure webcam server is fully started
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Try to start the webcam server first
+        try {
+          const webcamResponse = await hydrationService.startWebcamServer();
+          if (webcamResponse.status !== 'success') {
+            // If webcam server fails to start, try using the existing one from posture API
+            console.log('Failed to start hydration webcam server, trying posture API...');
+            const postureWebcamResponse = await postureService.startWebcamServer();
+            
+            if (postureWebcamResponse.status !== 'success') {
+              setNotification({
+                message: 'Failed to start webcam server. Please try again or restart the application.',
+                type: 'error'
+              });
+              setLoading(null);
+              return;
+            }
+          }
+        } catch (error) {
+          console.error('Error starting webcam server:', error);
+          setNotification({
+            message: 'Failed to start webcam server. Please check if another application is using your webcam.',
+            type: 'error'
+          });
+          setLoading(null);
+          return;
+        }
       }
       
-      const response = await hydrationService.startMonitoring();
-      if (response.status === 'success') {
-        setHydrationMonitoring(true);
+      setNotification({
+        message: 'Starting hydration monitoring. This may take a moment...',
+        type: 'info'
+      });
+      
+      try {
+        const response = await hydrationService.startMonitoring();
+        
+        if (response.status === 'success') {
+          setHydrationMonitoring(true);
+          setNotification({
+            message: 'Hydration monitoring started successfully!',
+            type: 'success'
+          });
+          // Start polling for data
+          startHydrationDataPolling();
+        } else {
+          // If the response indicates an error but the webcam server might be running
+          if (response.message && response.message.includes('socket address')) {
+            console.log('Socket address error detected, trying with existing webcam server...');
+            // The webcam server is likely already running, try again with a different approach
+            try {
+              // Wait a moment and try again
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              const retryResponse = await hydrationService.startMonitoring();
+              
+              if (retryResponse.status === 'success') {
+                setHydrationMonitoring(true);
+                setNotification({
+                  message: 'Hydration monitoring started successfully after retry!',
+                  type: 'success'
+                });
+                // Start polling for data
+                startHydrationDataPolling();
+                return;
+              }
+            } catch (retryError) {
+              console.error('Error on retry:', retryError);
+            }
+          }
+          
+          setNotification({
+            message: response.message || 'Failed to start hydration monitoring. Please try again.',
+            type: 'error'
+          });
+        }
+      } catch (error) {
+        console.error('Error starting hydration monitoring:', error);
         setNotification({
-          message: 'Hydration monitoring started successfully!',
-          type: 'success'
-        });
-        // Start polling for hydration data
-        startHydrationDataPolling();
-      } else {
-        setNotification({
-          message: response.message || 'Failed to start hydration monitoring',
+          message: 'Request timed out. The server might be busy or the webcam server might not be running properly.',
           type: 'error'
         });
       }
     } catch (error) {
+      console.error('Error in hydration monitoring process:', error);
       setNotification({
         message: 'Error starting hydration monitoring. Please ensure the backend is running.',
         type: 'error'
       });
+    } finally {
+      setLoading(null);
     }
   };
 
@@ -729,8 +838,6 @@ const ScriptRunner: React.FC = () => {
   };
 
   // Hydration data polling for real-time updates
-  const [hydrationPollingInterval, setHydrationPollingInterval] = useState<NodeJS.Timeout | null>(null);
-
   const startHydrationDataPolling = () => {
     // Poll every 30 seconds for hydration data
     const interval = setInterval(async () => {
@@ -759,8 +866,6 @@ const ScriptRunner: React.FC = () => {
               });
             }
           }
-        } else {
-          console.error('Error getting hydration data:', dataResponse);
         }
       } catch (error) {
         console.error('Error polling hydration data:', error);
@@ -831,225 +936,9 @@ const ScriptRunner: React.FC = () => {
     setHydrationAlerts([]);
   };
 
-  // Function to get hydration status color
-  const getHydrationStatusColor = () => {
-    if (!hydrationData?.average) return 'default';
-    
-    const dryPercentage = hydrationData.average.dry_lips_percentage;
-    if (dryPercentage > 60) return 'error';
-    if (dryPercentage > 30) return 'warning';
-    return 'success';
-  };
-
-  // Check monitoring status on component mount
-  useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        // Check posture status
-        const postureResponse = await postureService.getStatus();
-        if (postureResponse.status === 'success') {
-          // Set posture monitoring status
-          if (postureResponse.data.is_monitoring) {
-            setPostureMonitoring(true);
-            startDataPolling();
-          }
-          
-          // Set webcam server status
-          if (postureResponse.data.webcam_server_active) {
-            setWebcamServerActive(true);
-          }
-        }
-        
-        // Check stress status
-        const stressResponse = await stressService.getStatus();
-        if (stressResponse.status === 'success') {
-          // Set stress monitoring status
-          if (stressResponse.data.is_monitoring) {
-            setStressMonitoring(true);
-            startStressDataPolling();
-          }
-          
-          // Also check webcam server from stress API if it wasn't active in posture API
-          if (!postureResponse.data?.webcam_server_active && stressResponse.data.webcam_server_active) {
-            setWebcamServerActive(true);
-          }
-        }
-        
-        // Check CVS status
-        const cvsResponse = await cvsService.getStatus();
-        if (cvsResponse.status === 'success') {
-          // Set CVS monitoring status
-          if (cvsResponse.data.is_monitoring) {
-            setCvsMonitoring(true);
-            startCVSDataPolling();
-          }
-          
-          // Also check webcam server from CVS API if it wasn't active in other APIs
-          if (!postureResponse.data?.webcam_server_active && !stressResponse.data?.webcam_server_active && 
-              cvsResponse.data.webcam_server_active) {
-            setWebcamServerActive(true);
-          }
-        }
-        
-        // Check hydration status
-        const hydrationResponse = await hydrationService.getStatus();
-        if (hydrationResponse.status === 'success') {
-          // Set hydration monitoring status
-          if (hydrationResponse.data.is_monitoring) {
-            setHydrationMonitoring(true);
-            startHydrationDataPolling();
-          }
-          
-          // Also check webcam server from hydration API if it wasn't active in other APIs
-          if (!postureResponse.data?.webcam_server_active && !stressResponse.data?.webcam_server_active && 
-              !cvsResponse.data?.webcam_server_active && hydrationResponse.data.webcam_server_active) {
-            setWebcamServerActive(true);
-          }
-        }
-      } catch (error) {
-        console.error('Error checking monitoring status:', error);
-      }
-    };
-    
-    checkStatus();
-    
-    // Cleanup on unmount
-    return () => {
-      stopDataPolling();
-      stopStressDataPolling();
-      stopCVSDataPolling();
-      stopHydrationDataPolling();
-    };
-  }, []);
-
-  const scripts: Script[] = [
-    { 
-      id: 1, 
-      name: 'Enhanced Posture Checking', 
-      description: 'Real-time posture monitoring with Firebase integration and smart alerts', 
-      icon: <AccessibilityNewIcon />, 
-      method: postureMonitoring ? stopPostureMonitoring : startPostureMonitoring,
-      color: 'primary',
-      isEnhanced: true
-    },
-    { 
-      id: 2, 
-      name: 'Stress Level Checking', 
-      description: 'Detects signs of stress and recommends breaks', 
-      icon: <SentimentDissatisfiedIcon />, 
-      method: stressMonitoring ? stopStressMonitoring : startStressMonitoring,
-      color: 'secondary'
-    },
-    { 
-      id: 3, 
-      name: 'Eye Strain Checking', 
-      description: 'Monitors for eye strain and suggests exercises', 
-      icon: <VisibilityOffIcon />, 
-      method: cvsMonitoring ? stopCVSMonitoring : startCVSMonitoring,
-      color: 'success'
-    },
-    { 
-      id: 4, 
-      name: 'Dehydration Checking', 
-      description: 'Reminds to drink water during study sessions', 
-      icon: <LocalDrinkIcon />, 
-      method: hydrationMonitoring ? stopHydrationMonitoring : startHydrationMonitoring,
-      color: 'info'
-    }
-  ];
-
-  const runScript = async (id: number, method: () => Promise<any>) => {
-    // Special handling for enhanced posture monitoring
-    if (id === 1) {
-      try {
-        setLoading(id);
-        await method();
-      } catch (error) {
-        console.error(`Error running enhanced posture monitoring:`, error);
-        setNotification({ 
-          message: `Failed to manage posture monitoring: ${(error as Error).message || 'Unknown error'}`, 
-          type: 'error' 
-        });
-      } finally {
-        setLoading(null);
-      }
-      return;
-    }
-    
-    // Special handling for stress monitoring
-    if (id === 2) {
-      try {
-        setLoading(id);
-        await method();
-      } catch (error) {
-        console.error(`Error running stress monitoring:`, error);
-        setNotification({ 
-          message: `Failed to manage stress monitoring: ${(error as Error).message || 'Unknown error'}`, 
-          type: 'error' 
-        });
-      } finally {
-        setLoading(null);
-      }
-      return;
-    }
-    
-    // Special handling for eye strain monitoring
-    if (id === 3) {
-      try {
-        setLoading(id);
-        await method();
-      } catch (error) {
-        console.error(`Error running eye strain monitoring:`, error);
-        setNotification({ 
-          message: `Failed to manage eye strain monitoring: ${(error as Error).message || 'Unknown error'}`, 
-          type: 'error' 
-        });
-      } finally {
-        setLoading(null);
-      }
-      return;
-    }
-    
-    // Special handling for hydration monitoring
-    if (id === 4) {
-      try {
-        setLoading(id);
-        await method();
-      } catch (error) {
-        console.error(`Error running hydration monitoring:`, error);
-        setNotification({ 
-          message: `Failed to manage hydration monitoring: ${(error as Error).message || 'Unknown error'}`, 
-          type: 'error' 
-        });
-      } finally {
-        setLoading(null);
-      }
-      return;
-    }
-    
-    // Original script handling for other scripts
-    try {
-      setLoading(id);
-      const result = await method();
-      setNotification({ 
-        message: `Successfully activated ${scripts.find(s => s.id === id)?.name}`, 
-        type: 'success' 
-      });
-    } catch (error) {
-      console.error(`Error running script ${id}:`, error);
-      setNotification({ 
-        message: `Failed to run script: ${(error as Error).message || 'Unknown error'}`, 
-        type: 'error' 
-      });
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  const handleCloseNotification = () => {
-    setNotification(null);
-  };
-
+  // -----------------------------------------------------------------------------
+  // Helper Functions
+  // -----------------------------------------------------------------------------
   const getPostureStatusColor = () => {
     if (!postureData?.average) return 'default';
     const badPercentage = postureData.average.bad_posture_percentage;
@@ -1079,138 +968,403 @@ const ScriptRunner: React.FC = () => {
     return 'success';
   };
 
-  return (
-    <Box>
-      {/* Webcam Server Control */}
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h5" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <PlayArrowIcon color="primary" /> Webcam Server Control
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Start the webcam server separately before running monitoring tools. This allows for more control over system resources.
-        </Typography>
+  const getHydrationStatusColor = () => {
+    if (!hydrationData?.average) return 'default';
+    
+    const dryPercentage = hydrationData.average.dry_lips_percentage;
+    if (dryPercentage > 60) return 'error';
+    if (dryPercentage > 30) return 'warning';
+    return 'success';
+  };
+
+  // -----------------------------------------------------------------------------
+  // Check Monitoring Status
+  // -----------------------------------------------------------------------------
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        // Check posture monitoring status
+        const postureResponse = await postureService.getStatus();
+        if (postureResponse.status === 'success') {
+          setPostureMonitoring(postureResponse.data.is_monitoring);
+          setWebcamServerActive(postureResponse.data.webcam_server_active);
+          
+          // If monitoring is active, start data polling
+          if (postureResponse.data.is_monitoring) {
+          startDataPolling();
+          }
+        }
         
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Button
-            variant={webcamServerActive ? "contained" : "outlined"}
-            color={webcamServerActive ? "error" : "primary"}
-            size="large"
-            startIcon={webcamLoading ? <CircularProgress size={20} /> : webcamServerActive ? <StopIcon /> : <PlayArrowIcon />}
-            onClick={webcamServerActive ? stopWebcamServer : startWebcamServer}
-            disabled={webcamLoading || (webcamServerActive && (postureMonitoring || stressMonitoring))}
-            sx={{ 
-              px: 4,
-              py: 1.5,
-              border: 2,
-              '&:hover': {
-                border: 2,
-              }
-            }}
-          >
-            {webcamServerActive ? 'Stop Webcam Server' : 'Start Webcam Server'}
-          </Button>
+        // Check stress monitoring status
+        const stressResponse = await stressService.getStatus();
+        if (stressResponse.status === 'success') {
+          setStressMonitoring(stressResponse.data.is_monitoring);
+          setWebcamServerActive(stressResponse.data.webcam_server_active || webcamServerActive);
           
-          <Chip 
-            label={webcamServerActive ? "Active" : "Inactive"} 
-            color={webcamServerActive ? "success" : "default"} 
-            variant="outlined"
-          />
+          // If monitoring is active, start data polling
+          if (stressResponse.data.is_monitoring) {
+            startStressDataPolling();
+          }
+        }
+        
+        // Check CVS monitoring status
+        const cvsResponse = await cvsService.getStatus();
+        if (cvsResponse.status === 'success') {
+          setCvsMonitoring(cvsResponse.data.is_monitoring);
+          setWebcamServerActive(cvsResponse.data.webcam_server_active || webcamServerActive);
           
-          {webcamServerActive && (postureMonitoring || stressMonitoring) && (
-            <Typography variant="caption" color="warning.main">
-              Cannot stop webcam server while monitoring tools are active.
-            </Typography>
-          )}
+          // If monitoring is active, start data polling
+          if (cvsResponse.data.is_monitoring) {
+            startCVSDataPolling();
+          }
+        }
+        
+        // Check hydration monitoring status
+        const hydrationResponse = await hydrationService.getStatus();
+        if (hydrationResponse.status === 'success') {
+          setHydrationMonitoring(hydrationResponse.data.is_monitoring);
+          setWebcamServerActive(hydrationResponse.data.webcam_server_active || webcamServerActive);
+          
+          // If monitoring is active, start data polling
+          if (hydrationResponse.data.is_monitoring) {
+            startHydrationDataPolling();
+          }
+        }
+      } catch (error) {
+        console.error('Error checking monitoring status:', error);
+      }
+    };
+    
+    checkStatus();
+    
+    // Cleanup on component unmount
+    return () => {
+      if (pollingInterval) clearInterval(pollingInterval);
+      if (stressPollingInterval) clearInterval(stressPollingInterval);
+      if (cvsPollingInterval) clearInterval(cvsPollingInterval);
+      if (hydrationPollingInterval) clearInterval(hydrationPollingInterval);
+    };
+  }, []);
+
+  // -----------------------------------------------------------------------------
+  // Script Management
+  // -----------------------------------------------------------------------------
+  const scripts: Script[] = [
+    { 
+      id: 1, 
+      name: 'Enhanced Posture Monitoring', 
+      description: 'Monitors your posture in real-time using computer vision',
+      icon: <AccessibilityNewIcon />, 
+      method: postureMonitoring ? stopPostureMonitoring : startPostureMonitoring,
+      color: 'primary',
+      isEnhanced: true
+    },
+    { 
+      id: 2, 
+      name: 'Stress Detection', 
+      description: 'Monitors facial expressions to detect stress levels',
+      icon: <SentimentDissatisfiedIcon />, 
+      method: stressMonitoring ? stopStressMonitoring : startStressMonitoring,
+      color: 'secondary'
+    },
+    { 
+      id: 3, 
+      name: 'Eye Strain Detection', 
+      description: 'Monitors blink rate to detect eye strain from computer use',
+      icon: <VisibilityOffIcon />, 
+      method: cvsMonitoring ? stopCVSMonitoring : startCVSMonitoring,
+      color: 'info'
+    },
+    { 
+      id: 4, 
+      name: 'Dehydration Detection', 
+      description: 'Monitors lip dryness to detect dehydration',
+      icon: <LocalDrinkIcon />, 
+      method: hydrationMonitoring ? stopHydrationMonitoring : startHydrationMonitoring,
+      color: 'warning'
+    }
+  ];
+
+  const runScript = async (scriptId: number) => {
+    setLoading(scriptId);
+    try {
+      const script = scripts.find(s => s.id === scriptId);
+      if (script) {
+        await script.method();
+      }
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleCloseNotification = () => {
+    setNotification(null);
+  };
+
+  // -----------------------------------------------------------------------------
+  // Component Render
+  // -----------------------------------------------------------------------------
+  return (
+    <Box sx={{ width: '100%', p: 2 }}>
+      {/* Webcam Server Control */}
+      <Paper sx={{ p: 2, mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Box>
+          <Typography variant="h6" gutterBottom>
+            Webcam Server
+        </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {webcamServerActive 
+              ? 'Webcam server is running and ready for monitoring tools' 
+              : 'Start the webcam server to use monitoring tools'}
+        </Typography>
         </Box>
+        <Button
+          variant="contained"
+          color={webcamServerActive ? 'error' : 'success'}
+          startIcon={webcamServerActive ? <StopIcon /> : <PlayArrowIcon />}
+          onClick={webcamServerActive ? stopWebcamServer : startWebcamServer}
+          disabled={webcamLoading}
+        >
+          {webcamLoading ? (
+            <CircularProgress size={24} color="inherit" />
+          ) : (
+            webcamServerActive ? 'Stop Server' : 'Start Server'
+          )}
+        </Button>
       </Paper>
 
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h5" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <PlayArrowIcon color="primary" /> Health Monitoring Tools
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Activate any of the monitoring tools below to help maintain your health and productivity during study sessions.
-          System notifications will appear when health concerns are detected.
-        </Typography>
-
-        <Grid container spacing={2}>
+      {/* Monitoring Tools */}
+      <Typography variant="h5" gutterBottom sx={{ mt: 4, mb: 2 }}>
+        Health Monitoring Tools
+      </Typography>
+      
+      <Grid container spacing={3}>
           {scripts.map((script) => (
-            <Grid item xs={12} sm={6} key={script.id}>
-              <Button
-                variant={
-                  (script.id === 1 && postureMonitoring) || 
-                  (script.id === 2 && stressMonitoring) || 
-                  (script.id === 3 && cvsMonitoring) ||
-                  (script.id === 4 && hydrationMonitoring)
-                    ? "contained" 
-                    : "outlined"
-                }
-                color={script.color}
-                fullWidth
-                size="large"
-                startIcon={
-                  loading === script.id ? 
-                    <CircularProgress size={20} /> : 
-                    ((script.id === 1 && postureMonitoring) || 
-                     (script.id === 2 && stressMonitoring) || 
-                     (script.id === 3 && cvsMonitoring) ||
-                     (script.id === 4 && hydrationMonitoring)) 
-                      ? <StopIcon /> 
-                      : script.icon
-                }
-                onClick={() => runScript(script.id, script.method)}
-                disabled={loading !== null}
-                sx={{ 
-                  py: 2, 
-                  justifyContent: 'flex-start',
-                  border: 2,
-                  '&:hover': {
-                    border: 2,
-                  }
-                }}
-              >
-                <Box sx={{ textAlign: 'left', flex: 1 }}>
-                  <Typography variant="subtitle1" fontWeight="bold">
-                    {script.id === 1 && postureMonitoring 
-                      ? 'Stop Posture Monitoring' 
-                      : script.id === 2 && stressMonitoring 
-                        ? 'Stop Stress Monitoring'
-                        : script.id === 3 && cvsMonitoring
-                          ? 'Stop Eye Strain Monitoring'
-                          : script.id === 4 && hydrationMonitoring
-                            ? 'Stop Hydration Monitoring'
-                            : script.name
-                    }
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {script.description}
-                  </Typography>
-                  {((script.id === 1 && postureMonitoring) || 
-                    (script.id === 2 && stressMonitoring) || 
-                    (script.id === 3 && cvsMonitoring) ||
-                    (script.id === 4 && hydrationMonitoring)) && (
+          <Grid item xs={12} sm={6} md={6} lg={3} key={script.id}>
+            <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <CardContent sx={{ flexGrow: 1 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <Box sx={{ mr: 1, color: `${script.color}.main` }}>
+                      {script.icon}
+                    </Box>
+                    <Typography variant="h6" component="div">
+                      {script.name}
+                    </Typography>
+                  </Box>
+                  
+                  {/* Status indicator */}
+                  {script.id === 1 && postureMonitoring && (
                     <Chip 
-                      label="Active" 
-                      color="success" 
                       size="small" 
-                      sx={{ mt: 0.5 }}
+                      color={getPostureStatusColor() as any} 
+                      label="Active" 
+                    />
+                  )}
+                  {script.id === 2 && stressMonitoring && (
+                    <Chip 
+                      size="small" 
+                      color={getStressStatusColor() as any} 
+                      label="Active" 
+                    />
+                  )}
+                  {script.id === 3 && cvsMonitoring && (
+                    <Chip 
+                      size="small" 
+                      color={getCVSStatusColor() as any} 
+                      label="Active" 
+                    />
+                  )}
+                  {script.id === 4 && hydrationMonitoring && (
+                    <Chip 
+                      size="small" 
+                      color={getHydrationStatusColor() as any} 
+                      label="Active" 
                     />
                   )}
                 </Box>
-              </Button>
+                
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  {script.description}
+                </Typography>
+                
+              <Button
+                  variant="contained"
+                  color={
+                  (script.id === 1 && postureMonitoring) || 
+                    (script.id === 2 && stressMonitoring) ||
+                    (script.id === 3 && cvsMonitoring) ||
+                    (script.id === 4 && hydrationMonitoring)
+                      ? 'error'
+                      : 'primary'
+                  }
+                fullWidth
+                  onClick={() => runScript(script.id)}
+                  disabled={loading !== null || (!webcamServerActive && 
+                    !(script.id === 1 && postureMonitoring) && 
+                    !(script.id === 2 && stressMonitoring) &&
+                    !(script.id === 3 && cvsMonitoring) &&
+                    !(script.id === 4 && hydrationMonitoring)
+                  )}
+                startIcon={
+                    loading === script.id ? (
+                      <CircularProgress size={24} color="inherit" />
+                    ) : (
+                      (script.id === 1 && postureMonitoring) ||
+                      (script.id === 2 && stressMonitoring) ||
+                      (script.id === 3 && cvsMonitoring) ||
+                      (script.id === 4 && hydrationMonitoring)
+                      ? <StopIcon /> 
+                        : <PlayArrowIcon />
+                    )
+                  }
+                >
+                  {loading === script.id
+                    ? 'Processing...'
+                    : (script.id === 1 && postureMonitoring) ||
+                      (script.id === 2 && stressMonitoring) ||
+                      (script.id === 3 && cvsMonitoring) ||
+                      (script.id === 4 && hydrationMonitoring)
+                      ? 'Stop Monitoring'
+                      : 'Start Monitoring'}
+                </Button>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
             </Grid>
-          ))}
-        </Grid>
 
-        <Box sx={{ mt: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <CheckCircleIcon color="success" fontSize="small" />
-          <Typography variant="body2" color="text.secondary">
-            Each health monitoring tool will generate system notifications to remind you even when the app is minimized.
-          </Typography>
-        </Box>
-      </Paper>
+      {/* CVS Monitoring Dashboard */}
+      {cvsMonitoring && (
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <VisibilityOffIcon color="info" /> Eye Strain Monitoring Dashboard
+            </Typography>
+            <IconButton onClick={() => setExpandedCVS(!expandedCVS)}>
+              {expandedCVS ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </IconButton>
+          </Box>
 
-      {/* Enhanced Posture Monitoring Dashboard */}
+          <Collapse in={expandedCVS}>
+            <Grid container spacing={2}>
+              {/* Current Status */}
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      Current Status (Last 5 minutes)
+                    </Typography>
+                    {cvsData?.average ? (
+                      <Box>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Average Blink Rate</Typography>
+                          <Typography variant="body2" fontWeight="bold">
+                            {cvsData.average.avg_blink_count.toFixed(1)} blinks/minute
+                          </Typography>
+                        </Box>
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Low Blink Rate</Typography>
+                          <Typography variant="body2" fontWeight="bold" color="warning.main">
+                            {cvsData.average.low_blink_percentage.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={cvsData.average.low_blink_percentage} 
+                          color="warning"
+                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
+                        />
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Normal Blink Rate</Typography>
+                          <Typography variant="body2" fontWeight="bold" color="success.main">
+                            {cvsData.average.normal_blink_percentage.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={cvsData.average.normal_blink_percentage} 
+                          color="success"
+                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
+                        />
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">High Blink Rate</Typography>
+                          <Typography variant="body2" fontWeight="bold" color="error.main">
+                            {cvsData.average.high_blink_percentage.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={cvsData.average.high_blink_percentage} 
+                          color="error"
+                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
+                        />
+                        
+                        <Typography variant="caption" color="text.secondary">
+                          Total samples: {cvsData.average.total_samples}
+                        </Typography>
+                        
+                        {cvsData.average.low_blink_percentage > 60 && (
+                          <Alert severity="warning" sx={{ mt: 2 }}>
+                            <strong>Warning:</strong> Low blink rate detected! This may cause dry eyes. Take a break and rest your eyes.
+                          </Alert>
+                        )}
+                        
+                        {cvsData.average.high_blink_percentage > 60 && (
+                          <Alert severity="warning" sx={{ mt: 2 }}>
+                            <strong>Warning:</strong> High blink rate detected! This indicates eye fatigue. Consider taking a break.
+                          </Alert>
+                        )}
+                      </Box>
+                    ) : (
+                      <Typography color="text.secondary">
+                        Collecting data... Please wait for initial readings.
+                      </Typography>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Recent Alerts */}
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <NotificationsActiveIcon color="warning" /> Recent Alerts
+                    </Typography>
+                    {cvsAlerts.length > 0 ? (
+                      <Stack spacing={1} sx={{ maxHeight: 200, overflowY: 'auto' }}>
+                        {cvsAlerts.slice(0, 5).map((alert) => (
+                          <Alert 
+                            key={alert.id} 
+                            severity={alert.level as any}
+                          >
+                            <Typography variant="body2">
+                              {alert.message}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {new Date(alert.created_at).toLocaleTimeString()}
+                            </Typography>
+                          </Alert>
+                        ))}
+                      </Stack>
+                    ) : (
+                      <Typography color="text.secondary">
+                        No recent alerts. Good eye health!
+                      </Typography>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          </Collapse>
+        </Paper>
+      )}
+
+      {/* Posture Monitoring Dashboard */}
       {postureMonitoring && (
         <Paper sx={{ p: 3, mb: 3 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -1265,7 +1419,7 @@ const ScriptRunner: React.FC = () => {
                         
                         {postureData.average.bad_posture_percentage > 60 && (
                           <Alert severity="warning" sx={{ mt: 2 }}>
-                            <strong>Warning:</strong> High bad posture detected! Please adjust your sitting position.
+                            <strong>Warning:</strong> Poor posture detected! Please adjust your sitting position.
                           </Alert>
                         )}
                       </Box>
@@ -1303,7 +1457,7 @@ const ScriptRunner: React.FC = () => {
                       </Stack>
                     ) : (
                       <Typography color="text.secondary">
-                        No recent alerts. Good posture maintained!
+                        No recent alerts. Good posture!
                       </Typography>
                     )}
                   </CardContent>
@@ -1382,7 +1536,7 @@ const ScriptRunner: React.FC = () => {
                         
                         {stressData.average.high_stress_percentage > 60 && (
                           <Alert severity="warning" sx={{ mt: 2 }}>
-                            <strong>Warning:</strong> High stress detected! Please take a break.
+                            <strong>Warning:</strong> High stress levels detected! Consider taking a short break or doing some relaxation exercises.
                           </Alert>
                         )}
                       </Box>
@@ -1420,7 +1574,7 @@ const ScriptRunner: React.FC = () => {
                       </Stack>
                     ) : (
                       <Typography color="text.secondary">
-                        No recent alerts. Good stress management!
+                        No recent alerts. Stress levels are good!
                       </Typography>
                     )}
                   </CardContent>
@@ -1431,262 +1585,19 @@ const ScriptRunner: React.FC = () => {
         </Paper>
       )}
 
-      {/* CVS Monitoring Dashboard */}
-      {cvsMonitoring && (
-        <Paper sx={{ p: 3, mb: 3 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <VisibilityOffIcon color="success" /> Eye Strain Monitoring Dashboard
-            </Typography>
-            <IconButton onClick={() => setExpandedCVS(!expandedCVS)}>
-              {expandedCVS ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-            </IconButton>
-          </Box>
-
-          <Collapse in={expandedCVS}>
-            <Grid container spacing={2}>
-              {/* Current Status */}
-              <Grid item xs={12} md={6}>
-                <Card>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                      Current Status (Last 5 minutes)
-                    </Typography>
-                    {cvsData?.average ? (
-                      <Box>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                          <Typography variant="body2">Average Blink Rate</Typography>
-                          <Typography variant="body2" fontWeight="bold">
-                            {cvsData.average.avg_blink_count.toFixed(1)} blinks/min
-                          </Typography>
-                        </Box>
-                        
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                          <Typography variant="body2">Low Blink Rate (Dry Eyes)</Typography>
-                          <Typography variant="body2" fontWeight="bold" color="error.main">
-                            {cvsData.average.low_blink_percentage.toFixed(1)}%
-                          </Typography>
-                        </Box>
-                        <LinearProgress 
-                          variant="determinate" 
-                          value={cvsData.average.low_blink_percentage} 
-                          color="error"
-                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
-                        />
-                        
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                          <Typography variant="body2">Normal Blink Rate</Typography>
-                          <Typography variant="body2" fontWeight="bold" color="success.main">
-                            {cvsData.average.normal_blink_percentage.toFixed(1)}%
-                          </Typography>
-                        </Box>
-                        <LinearProgress 
-                          variant="determinate" 
-                          value={cvsData.average.normal_blink_percentage} 
-                          color="success"
-                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
-                        />
-                        
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                          <Typography variant="body2">High Blink Rate (Eye Fatigue)</Typography>
-                          <Typography variant="body2" fontWeight="bold" color="warning.main">
-                            {cvsData.average.high_blink_percentage.toFixed(1)}%
-                          </Typography>
-                        </Box>
-                        <LinearProgress 
-                          variant="determinate" 
-                          value={cvsData.average.high_blink_percentage} 
-                          color="warning"
-                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
-                        />
-                        
-                        <Typography variant="caption" color="text.secondary">
-                          Total samples: {cvsData.average.total_samples}
-                        </Typography>
-                        
-                        {cvsData.average.low_blink_percentage > 60 && (
-                          <Alert severity="warning" sx={{ mt: 2 }}>
-                            <strong>Warning:</strong> Low blink rate detected! This can cause dry eyes. Take a break and rest your eyes.
-                          </Alert>
-                        )}
-                        
-                        {cvsData.average.high_blink_percentage > 60 && (
-                          <Alert severity="warning" sx={{ mt: 2 }}>
-                            <strong>Warning:</strong> High blink rate detected! This can indicate eye fatigue. Take a break from screen time.
-                          </Alert>
-                        )}
-                      </Box>
-                    ) : (
-                      <Typography color="text.secondary">
-                        Collecting data... Please wait for initial readings.
-                      </Typography>
-                    )}
-                  </CardContent>
-                </Card>
-              </Grid>
-
-              {/* Recent Alerts */}
-              <Grid item xs={12} md={6}>
-                <Card>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <NotificationsActiveIcon color="warning" /> Recent Alerts
-                    </Typography>
-                    {cvsAlerts.length > 0 ? (
-                      <Stack spacing={1} sx={{ maxHeight: 200, overflowY: 'auto' }}>
-                        {cvsAlerts.slice(0, 5).map((alert) => (
-                          <Alert 
-                            key={alert.id} 
-                            severity={alert.level as any}
-                          >
-                            <Typography variant="body2">
-                              {alert.message}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {new Date(alert.created_at).toLocaleTimeString()}
-                            </Typography>
-                          </Alert>
-                        ))}
-                      </Stack>
-                    ) : (
-                      <Typography color="text.secondary">
-                        No recent alerts. Healthy eye activity!
-                      </Typography>
-                    )}
-                  </CardContent>
-                </Card>
-              </Grid>
-            </Grid>
-          </Collapse>
-        </Paper>
-      )}
-
-      {/* Hydration Monitoring Dashboard */}
-      {hydrationMonitoring && (
-        <Paper sx={{ p: 3, mb: 3 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <LocalDrinkIcon color="info" /> Hydration Monitoring Dashboard
-            </Typography>
-            <IconButton onClick={() => setExpandedHydration(!expandedHydration)}>
-              {expandedHydration ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-            </IconButton>
-          </Box>
-
-          <Collapse in={expandedHydration}>
-            <Grid container spacing={2}>
-              {/* Current Status */}
-              <Grid item xs={12} md={6}>
-                <Card>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                      Current Status (Last 5 minutes)
-                    </Typography>
-                    {hydrationData?.average ? (
-                      <Box>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                          <Typography variant="body2">Average Dryness Score</Typography>
-                          <Typography variant="body2" fontWeight="bold">
-                            {hydrationData.average.avg_dryness_score.toFixed(2)}
-                          </Typography>
-                        </Box>
-                        
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                          <Typography variant="body2">Dry Lips</Typography>
-                          <Typography variant="body2" fontWeight="bold" color="error.main">
-                            {hydrationData.average.dry_lips_percentage.toFixed(1)}%
-                          </Typography>
-                        </Box>
-                        <LinearProgress 
-                          variant="determinate" 
-                          value={hydrationData.average.dry_lips_percentage} 
-                          color="error"
-                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
-                        />
-                        
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                          <Typography variant="body2">Normal Lips</Typography>
-                          <Typography variant="body2" fontWeight="bold" color="success.main">
-                            {hydrationData.average.normal_lips_percentage.toFixed(1)}%
-                          </Typography>
-                        </Box>
-                        <LinearProgress 
-                          variant="determinate" 
-                          value={hydrationData.average.normal_lips_percentage} 
-                          color="success"
-                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
-                        />
-                        
-                        <Typography variant="caption" color="text.secondary">
-                          Total samples: {hydrationData.average.total_samples}
-                        </Typography>
-                        
-                        {hydrationData.average.dry_lips_percentage > 60 && (
-                          <Alert severity="warning" sx={{ mt: 2 }}>
-                            <strong>Warning:</strong> Dry lips detected! This indicates dehydration. Please drink some water.
-                          </Alert>
-                        )}
-                      </Box>
-                    ) : (
-                      <Typography color="text.secondary">
-                        Collecting data... Please wait for initial readings.
-                      </Typography>
-                    )}
-                  </CardContent>
-                </Card>
-              </Grid>
-
-              {/* Recent Alerts */}
-              <Grid item xs={12} md={6}>
-                <Card>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <NotificationsActiveIcon color="warning" /> Recent Alerts
-                    </Typography>
-                    {hydrationAlerts.length > 0 ? (
-                      <Stack spacing={1} sx={{ maxHeight: 200, overflowY: 'auto' }}>
-                        {hydrationAlerts.slice(0, 5).map((alert) => (
-                          <Alert 
-                            key={alert.id} 
-                            severity={alert.level as any}
-                          >
-                            <Typography variant="body2">
-                              {alert.message}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {new Date(alert.created_at).toLocaleTimeString()}
-                            </Typography>
-                          </Alert>
-                        ))}
-                      </Stack>
-                    ) : (
-                      <Typography color="text.secondary">
-                        No recent alerts. Good hydration!
-                      </Typography>
-                    )}
-                  </CardContent>
-                </Card>
-              </Grid>
-            </Grid>
-          </Collapse>
-        </Paper>
-      )}
-
+      {/* Notifications */}
+      {notification && (
       <Snackbar 
-        open={notification !== null} 
+          open={true}
         autoHideDuration={6000} 
         onClose={handleCloseNotification}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <Alert 
-          onClose={handleCloseNotification} 
-          severity={notification?.type as 'success' | 'error' | 'warning' | 'info'} 
-          variant="filled"
-          sx={{ width: '100%' }}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         >
-          {notification?.message || ''}
-        </Alert>
+          <Alert onClose={handleCloseNotification} severity={notification.type} sx={{ width: '100%' }}>
+            {notification.message}
+          </Alert>
       </Snackbar>
+      )}
     </Box>
   );
 };

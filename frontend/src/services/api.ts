@@ -1,7 +1,21 @@
+/**
+ * API Service
+ * 
+ * Provides centralized API communication for the EDUGuard application
+ * with error handling and authentication management.
+ */
 import axios from 'axios';
 
-// Define base URL for API calls
+// -----------------------------------------------------------------------------
+// Configuration
+// -----------------------------------------------------------------------------
 const API_BASE_URL = 'http://localhost:5000/api';
+
+// Default timeout (10 seconds)
+const DEFAULT_TIMEOUT = 10000;
+
+// Extended timeout for long-running operations (60 seconds)
+const EXTENDED_TIMEOUT = 60000;
 
 // Create axios instance with default config
 const api = axios.create({
@@ -9,11 +23,12 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  // Increase timeout for slow connections
-  timeout: 10000,
+  timeout: DEFAULT_TIMEOUT,
 });
 
-// Add request interceptor to add user ID to all requests
+// -----------------------------------------------------------------------------
+// Request Interceptors
+// -----------------------------------------------------------------------------
 api.interceptors.request.use(
   config => {
     // Add user ID from local storage if available
@@ -31,16 +46,36 @@ api.interceptors.request.use(
     } else {
       console.warn('No user ID found in local storage for API request');
     }
+    
+    // Apply extended timeout for specific endpoints that may take longer
+    if (config.url) {
+      // Hydration monitoring endpoints need more time
+      if (config.url.includes('/hydration/start') || 
+          config.url.includes('/hydration/stop') ||
+          config.url.includes('/webcam/start')) {
+        console.log(`Applying extended timeout (${EXTENDED_TIMEOUT}ms) for: ${config.url}`);
+        config.timeout = EXTENDED_TIMEOUT;
+      }
+    }
+    
     return config;
   },
   error => Promise.reject(error)
 );
 
-// Add response interceptor for error handling
+// -----------------------------------------------------------------------------
+// Response Interceptors
+// -----------------------------------------------------------------------------
 api.interceptors.response.use(
   response => response,
   error => {
-    console.error('API Error:', error.message);
+    // Detailed error logging
+    if (error.code === 'ECONNABORTED') {
+      console.error(`Request timeout: ${error.config?.url} exceeded ${error.config?.timeout}ms`);
+    } else {
+      console.error('API Error:', error.message);
+    }
+    
     console.error('Request details:', {
       url: error.config?.url,
       method: error.config?.method,
@@ -73,13 +108,27 @@ api.interceptors.response.use(
         // Let authentication errors pass through to be handled by the auth context
         throw error;
       }
+      
+      // For hydration monitoring errors, provide more helpful message
+      if (error.response?.config?.url?.includes('/hydration/start')) {
+        console.error('Hydration monitoring failed to start. This might be due to webcam server issues.');
+        return {
+          data: {
+            status: 'error',
+            message: 'Hydration monitoring failed to start. Please try again or restart the application.',
+            monitoring: false
+          }
+        };
+      }
     }
     
     return Promise.reject(error);
   }
 );
 
-// Authentication endpoints
+// -----------------------------------------------------------------------------
+// Authentication Services
+// -----------------------------------------------------------------------------
 export const authService = {
   login: async (email: string, password: string) => {
     try {
@@ -172,7 +221,9 @@ export const authService = {
   }
 };
 
-// Monitoring endpoints
+// -----------------------------------------------------------------------------
+// Generic Monitoring Services
+// -----------------------------------------------------------------------------
 export const monitoringService = {
   getStatus: async () => {
     try {
@@ -229,7 +280,9 @@ export const monitoringService = {
   }
 };
 
-// Enhanced Posture Monitoring endpoints
+// -----------------------------------------------------------------------------
+// Posture Monitoring Services
+// -----------------------------------------------------------------------------
 export const postureService = {
   startMonitoring: async (progressReportId?: string) => {
     try {
@@ -339,7 +392,9 @@ export const postureService = {
   }
 };
 
-// Stress Monitoring endpoints
+// -----------------------------------------------------------------------------
+// Stress Monitoring Services
+// -----------------------------------------------------------------------------
 export const stressService = {
   startMonitoring: async (progressReportId?: string) => {
     try {
@@ -449,7 +504,9 @@ export const stressService = {
   }
 };
 
-// CVS Monitoring endpoints (Eye Blink Detection)
+// -----------------------------------------------------------------------------
+// CVS Monitoring Services (Eye Blink Detection)
+// -----------------------------------------------------------------------------
 export const cvsService = {
   startMonitoring: async (progressReportId?: string) => {
     try {
@@ -559,7 +616,9 @@ export const cvsService = {
   }
 };
 
-// Hydration Monitoring endpoints (Lip Dryness Detection)
+// -----------------------------------------------------------------------------
+// Hydration Monitoring Services (Lip Dryness Detection)
+// -----------------------------------------------------------------------------
 export const hydrationService = {
   startMonitoring: async (progressReportId?: string) => {
     try {

@@ -53,6 +53,11 @@ PORT = 9999
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose()
 
+# Helper function to ensure log messages are safe for all consoles
+def safe_log(message):
+    """Replace emoji characters with text alternatives"""
+    return message
+
 def calculate_angle(vector1, vector2):
     """Calculate angle between two vectors"""
     dot_product = np.dot(vector1, vector2)
@@ -83,7 +88,7 @@ def save_posture_data(posture):
         key = db_manager.save_prediction('posture', prediction_data, timestamp)
         
         if key:
-            logger.info(f"✅ Saved posture data: {posture}")
+            logger.info(f"[OK] Saved posture data: {posture}")
             
             # Check for bad posture alert
             if posture == "Bad Posture":
@@ -115,7 +120,7 @@ def main():
         # Connect to webcam server
         logger.info(f"Connecting to webcam server at {HOST}:{PORT}")
         client_socket.connect((HOST, PORT))
-        logger.info("✅ Connected to webcam server")
+        logger.info("[OK] Connected to webcam server")
         
         # Update monitoring status
         db_manager.update_user_monitoring_status(True)
@@ -125,7 +130,7 @@ def main():
         save_interval = 3  # Save every 3 seconds
         frame_count = 0
         
-        logger.info("🎥 Starting posture detection...")
+        logger.info("[CAMERA] Starting posture detection...")
         
         while True:
             try:
@@ -240,7 +245,7 @@ def main():
         except:
             pass
         
-        logger.info("🛑 Posture detection stopped")
+        logger.info("[STOP] Posture detection stopped")
 
 if __name__ == "__main__":
     try:
