@@ -26,7 +26,6 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
-import WarningIcon from '@mui/icons-material/Warning';
 import { postureService, stressService } from '../services/api';
 
 type ScriptColor = 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error';
@@ -53,6 +52,20 @@ interface PostureData {
   minutes: number;
 }
 
+interface StressData {
+  predictions: any[];
+  average: {
+    low_stress_count: number;
+    medium_stress_count: number;
+    high_stress_count: number;
+    low_stress_percentage: number;
+    medium_stress_percentage: number;
+    high_stress_percentage: number;
+    total_samples: number;
+  } | null;
+  minutes: number;
+}
+
 interface PostureAlert {
   id: string;
   type: string;
@@ -69,6 +82,23 @@ interface PostureAlert {
   };
 }
 
+interface StressAlert {
+  id: string;
+  type: string;
+  message: string;
+  level: string;
+  timestamp: number;
+  created_at: string;
+  read: boolean;
+  data?: {
+    high_stress_percentage: number;
+    total_samples: number;
+    low_stress_count: number;
+    medium_stress_count: number;
+    high_stress_count: number;
+  };
+}
+
 const ScriptRunner: React.FC = () => {
   const [loading, setLoading] = useState<number | null>(null);
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error' | 'warning' | 'info'} | null>(null);
@@ -77,6 +107,9 @@ const ScriptRunner: React.FC = () => {
   const [postureAlerts, setPostureAlerts] = useState<PostureAlert[]>([]);
   const [expandedPosture, setExpandedPosture] = useState(false);
   const [stressMonitoring, setStressMonitoring] = useState(false);
+  const [stressData, setStressData] = useState<StressData | null>(null);
+  const [stressAlerts, setStressAlerts] = useState<StressAlert[]>([]);
+  const [expandedStress, setExpandedStress] = useState(false);
   const [webcamServerActive, setWebcamServerActive] = useState(false);
   const [webcamLoading, setWebcamLoading] = useState(false);
 
@@ -218,6 +251,8 @@ const ScriptRunner: React.FC = () => {
           message: 'Stress monitoring started successfully!',
           type: 'success'
         });
+        // Start polling for stress data
+        startStressDataPolling();
       } else {
         setNotification({
           message: response.message || 'Failed to start stress monitoring',
@@ -241,6 +276,8 @@ const ScriptRunner: React.FC = () => {
           message: 'Stress monitoring stopped successfully!',
           type: 'success'
         });
+        // Stop polling
+        stopStressDataPolling();
       } else {
         setNotification({
           message: response.message || 'Failed to stop stress monitoring',
@@ -319,6 +356,70 @@ const ScriptRunner: React.FC = () => {
     setPostureAlerts([]);
   };
 
+  // Stress data polling for real-time updates
+  const [stressPollingInterval, setStressPollingInterval] = useState<NodeJS.Timeout | null>(null);
+
+  const startStressDataPolling = () => {
+    // Poll every 30 seconds for stress data
+    const interval = setInterval(async () => {
+      try {
+        // Get recent stress data
+        const dataResponse = await stressService.getRecentData(5, true);
+        if (dataResponse.status === 'success') {
+          setStressData(dataResponse.data);
+          
+          // Check for new alerts
+          const alertsResponse = await stressService.getRecentAlerts(10);
+          if (alertsResponse.status === 'success') {
+            const alerts = alertsResponse.data.alerts;
+            setStressAlerts(alerts);
+            
+            // Show notification for new alerts
+            const recentAlert = alerts.find((alert: StressAlert) => 
+              !alert.read && new Date(alert.created_at).getTime() > Date.now() - 60000 // Last minute
+            );
+            
+            if (recentAlert) {
+              setNotification({
+                message: recentAlert.message,
+                type: 'warning'
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error polling stress data:', error);
+      }
+    }, 30000);
+    
+    setStressPollingInterval(interval);
+    
+    // Get initial data immediately
+    setTimeout(async () => {
+      try {
+        const dataResponse = await stressService.getRecentData(5, true);
+        if (dataResponse.status === 'success') {
+          setStressData(dataResponse.data);
+        }
+        const alertsResponse = await stressService.getRecentAlerts(10);
+        if (alertsResponse.status === 'success') {
+          setStressAlerts(alertsResponse.data.alerts);
+        }
+      } catch (error) {
+        console.error('Error getting initial stress data:', error);
+      }
+    }, 3000);
+  };
+
+  const stopStressDataPolling = () => {
+    if (stressPollingInterval) {
+      clearInterval(stressPollingInterval);
+      setStressPollingInterval(null);
+    }
+    setStressData(null);
+    setStressAlerts([]);
+  };
+
   // Check monitoring status on component mount
   useEffect(() => {
     const checkStatus = async () => {
@@ -344,6 +445,7 @@ const ScriptRunner: React.FC = () => {
           // Set stress monitoring status
           if (stressResponse.data.is_monitoring) {
             setStressMonitoring(true);
+            startStressDataPolling();
           }
           
           // Also check webcam server from stress API if it wasn't active in posture API
@@ -361,6 +463,7 @@ const ScriptRunner: React.FC = () => {
     // Cleanup on unmount
     return () => {
       stopDataPolling();
+      stopStressDataPolling();
     };
   }, []);
 
@@ -446,6 +549,14 @@ const ScriptRunner: React.FC = () => {
     const badPercentage = postureData.average.bad_posture_percentage;
     if (badPercentage > 60) return 'error';
     if (badPercentage > 30) return 'warning';
+    return 'success';
+  };
+
+  const getStressStatusColor = () => {
+    if (!stressData?.average) return 'default';
+    const highPercentage = stressData.average.high_stress_percentage;
+    if (highPercentage > 60) return 'error';
+    if (highPercentage > 30) return 'warning';
     return 'success';
   };
 
@@ -664,6 +775,123 @@ const ScriptRunner: React.FC = () => {
                     ) : (
                       <Typography color="text.secondary">
                         No recent alerts. Good posture maintained!
+                      </Typography>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          </Collapse>
+        </Paper>
+      )}
+
+      {/* Stress Monitoring Dashboard */}
+      {stressMonitoring && (
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <SentimentDissatisfiedIcon color="secondary" /> Stress Monitoring Dashboard
+            </Typography>
+            <IconButton onClick={() => setExpandedStress(!expandedStress)}>
+              {expandedStress ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </IconButton>
+          </Box>
+
+          <Collapse in={expandedStress}>
+            <Grid container spacing={2}>
+              {/* Current Status */}
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      Current Status (Last 5 minutes)
+                    </Typography>
+                    {stressData?.average ? (
+                      <Box>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Low Stress</Typography>
+                          <Typography variant="body2" fontWeight="bold" color="success.main">
+                            {stressData.average.low_stress_percentage.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={stressData.average.low_stress_percentage} 
+                          color="success"
+                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
+                        />
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Medium Stress</Typography>
+                          <Typography variant="body2" fontWeight="bold" color="warning.main">
+                            {stressData.average.medium_stress_percentage.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={stressData.average.medium_stress_percentage} 
+                          color="warning"
+                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
+                        />
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">High Stress</Typography>
+                          <Typography variant="body2" fontWeight="bold" color="error.main">
+                            {stressData.average.high_stress_percentage.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={stressData.average.high_stress_percentage} 
+                          color="error"
+                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
+                        />
+                        
+                        <Typography variant="caption" color="text.secondary">
+                          Total samples: {stressData.average.total_samples}
+                        </Typography>
+                        
+                        {stressData.average.high_stress_percentage > 60 && (
+                          <Alert severity="warning" sx={{ mt: 2 }}>
+                            <strong>Warning:</strong> High stress detected! Please take a break.
+                          </Alert>
+                        )}
+                      </Box>
+                    ) : (
+                      <Typography color="text.secondary">
+                        Collecting data... Please wait for initial readings.
+                      </Typography>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Recent Alerts */}
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <NotificationsActiveIcon color="warning" /> Recent Alerts
+                    </Typography>
+                    {stressAlerts.length > 0 ? (
+                      <Stack spacing={1} sx={{ maxHeight: 200, overflowY: 'auto' }}>
+                        {stressAlerts.slice(0, 5).map((alert) => (
+                          <Alert 
+                            key={alert.id} 
+                            severity={alert.level as any}
+                          >
+                            <Typography variant="body2">
+                              {alert.message}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {new Date(alert.created_at).toLocaleTimeString()}
+                            </Typography>
+                          </Alert>
+                        ))}
+                      </Stack>
+                    ) : (
+                      <Typography color="text.secondary">
+                        No recent alerts. Good stress management!
                       </Typography>
                     )}
                   </CardContent>

@@ -380,6 +380,37 @@ class DatabaseManager:
                     'total_samples': total_count,
                     'samples': len(predictions)
                 }
+            elif model_name == 'stress':
+                # Calculate stress statistics
+                stress_values = [
+                    p.get('prediction', {}).get('stress_level', '') 
+                    for p in predictions
+                ]
+                
+                if not stress_values:
+                    return None
+                
+                # Count stress levels
+                low_count = sum(1 for stress in stress_values if stress == 'Low Stress')
+                medium_count = sum(1 for stress in stress_values if stress == 'Medium Stress')
+                high_count = sum(1 for stress in stress_values if stress == 'High Stress')
+                total_count = len(stress_values)
+                
+                # Calculate percentages
+                low_percentage = (low_count / total_count) * 100 if total_count > 0 else 0
+                medium_percentage = (medium_count / total_count) * 100 if total_count > 0 else 0
+                high_percentage = (high_count / total_count) * 100 if total_count > 0 else 0
+                
+                return {
+                    'low_stress_count': low_count,
+                    'medium_stress_count': medium_count,
+                    'high_stress_count': high_count,
+                    'low_stress_percentage': low_percentage,
+                    'medium_stress_percentage': medium_percentage,
+                    'high_stress_percentage': high_percentage,
+                    'total_samples': total_count,
+                    'samples': len(predictions)
+                }
                 
             return None
         except Exception as e:
