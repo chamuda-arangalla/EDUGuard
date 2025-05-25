@@ -34,7 +34,7 @@ class StressMonitoringManager:
             # Check if webcam server is already running
             if self.webcam_process and self.webcam_process.poll() is None:
                 logger.info("Webcam server is already running")
-                return True
+                return True, "Webcam server is already running"
                 
             # Start webcam server
             script_dir = os.path.join(os.path.dirname(__file__), 'modelScrpits')
@@ -52,15 +52,44 @@ class StressMonitoringManager:
             # Check if it started successfully
             if self.webcam_process.poll() is None:
                 logger.info("Webcam server started successfully")
-                return True
+                return True, "Webcam server started successfully"
             else:
                 stdout, stderr = self.webcam_process.communicate()
                 logger.error(f"Webcam server failed to start: {stderr.decode()}")
-                return False
+                return False, f"Failed to start webcam server: {stderr.decode()}"
                 
         except Exception as e:
             logger.error(f"Error starting webcam server: {e}")
-            return False
+            return False, str(e)
+            
+    def stop_webcam_server(self):
+        """Stop the webcam server if it's running"""
+        try:
+            if not self.webcam_process:
+                return True, "No webcam server is running"
+                
+            if self.webcam_process.poll() is not None:
+                self.webcam_process = None
+                return True, "Webcam server was not running"
+            
+            # Terminate the process
+            self.webcam_process.terminate()
+            
+            # Wait for it to stop
+            try:
+                self.webcam_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                logger.warning("Webcam server didn't terminate gracefully, killing...")
+                self.webcam_process.kill()
+                self.webcam_process.wait()
+            
+            self.webcam_process = None
+            logger.info("Webcam server stopped successfully")
+            return True, "Webcam server stopped successfully"
+            
+        except Exception as e:
+            logger.error(f"Error stopping webcam server: {e}")
+            return False, str(e)
     
     def start_stress_monitoring(self, user_id, progress_report_id):
         """Start stress monitoring for a user"""
@@ -76,8 +105,9 @@ class StressMonitoringManager:
                     del self.processes[user_id]
             
             # Start webcam server first
-            if not self.start_webcam_server():
-                return False, "Failed to start webcam server"
+            webcam_success, webcam_message = self.start_webcam_server()
+            if not webcam_success:
+                return False, f"Failed to start webcam server: {webcam_message}"
             
             # Start stress detection
             script_dir = os.path.join(os.path.dirname(__file__), 'modelScrpits')
@@ -411,6 +441,75 @@ def trigger_stress_alert_check():
         
     except Exception as e:
         logger.error(f"Error in trigger_stress_alert_check: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@stress_bp.route('/webcam/start', methods=['POST'])
+def start_webcam_server():
+    """Start only the webcam server without stress monitoring"""
+    try:
+        with monitoring_lock:
+            success, message = monitoring_manager.start_webcam_server()
+            
+            if success:
+                return jsonify({
+                    'status': 'success',
+                    'message': message,
+                    'webcam_server_active': True
+                })
+            else:
+                return jsonify({
+                    'status': 'error',
+                    'message': message,
+                    'webcam_server_active': False
+                }), 500
+                
+    except Exception as e:
+        logger.error(f"Error in start_webcam_server: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'webcam_server_active': False
+        }), 500
+
+@stress_bp.route('/webcam/stop', methods=['POST'])
+def stop_webcam_server():
+    """Stop the webcam server"""
+    try:
+        with monitoring_lock:
+            # Check if any monitoring processes are active
+            active_processes = False
+            for user_id, process in monitoring_manager.processes.items():
+                if process.poll() is None:
+                    active_processes = True
+                    break
+            
+            if active_processes:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Cannot stop webcam server while monitoring processes are active',
+                    'webcam_server_active': True
+                }), 400
+            
+            success, message = monitoring_manager.stop_webcam_server()
+            
+            if success:
+                return jsonify({
+                    'status': 'success',
+                    'message': message,
+                    'webcam_server_active': False
+                })
+            else:
+                return jsonify({
+                    'status': 'error',
+                    'message': message,
+                    'webcam_server_active': True
+                }), 500
+                
+    except Exception as e:
+        logger.error(f"Error in stop_webcam_server: {e}")
         return jsonify({
             'status': 'error',
             'message': str(e)

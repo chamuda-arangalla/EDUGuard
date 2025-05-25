@@ -271,6 +271,32 @@ export const postureService = {
     }
   },
   
+  startWebcamServer: async () => {
+    try {
+      const response = await api.post('/posture/webcam/start');
+      return response.data;
+    } catch (error: any) {
+      console.error('Start webcam server error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not start webcam server.' 
+      };
+    }
+  },
+  
+  stopWebcamServer: async () => {
+    try {
+      const response = await api.post('/posture/webcam/stop');
+      return response.data;
+    } catch (error: any) {
+      console.error('Stop webcam server error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not stop webcam server.' 
+      };
+    }
+  },
+  
   getRecentData: async (minutes = 5, includeAverage = true) => {
     try {
       const response = await api.get(
@@ -351,6 +377,32 @@ export const stressService = {
       return { 
         status: 'error', 
         data: { is_monitoring: false, webcam_server_active: false } 
+      };
+    }
+  },
+  
+  startWebcamServer: async () => {
+    try {
+      const response = await api.post('/stress/webcam/start');
+      return response.data;
+    } catch (error: any) {
+      console.error('Start webcam server error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not start webcam server.' 
+      };
+    }
+  },
+  
+  stopWebcamServer: async () => {
+    try {
+      const response = await api.post('/stress/webcam/stop');
+      return response.data;
+    } catch (error: any) {
+      console.error('Stop webcam server error:', error.response?.data || error.message);
+      return { 
+        status: 'error', 
+        message: error.response?.data?.message || 'Could not stop webcam server.' 
       };
     }
   },

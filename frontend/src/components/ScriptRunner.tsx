@@ -77,6 +77,61 @@ const ScriptRunner: React.FC = () => {
   const [postureAlerts, setPostureAlerts] = useState<PostureAlert[]>([]);
   const [expandedPosture, setExpandedPosture] = useState(false);
   const [stressMonitoring, setStressMonitoring] = useState(false);
+  const [webcamServerActive, setWebcamServerActive] = useState(false);
+  const [webcamLoading, setWebcamLoading] = useState(false);
+
+  // Webcam server control functions
+  const startWebcamServer = async () => {
+    try {
+      setWebcamLoading(true);
+      const response = await postureService.startWebcamServer();
+      if (response.status === 'success') {
+        setWebcamServerActive(true);
+        setNotification({
+          message: 'Webcam server started successfully!',
+          type: 'success'
+        });
+      } else {
+        setNotification({
+          message: response.message || 'Failed to start webcam server',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      setNotification({
+        message: 'Error starting webcam server. Please ensure the backend is running.',
+        type: 'error'
+      });
+    } finally {
+      setWebcamLoading(false);
+    }
+  };
+
+  const stopWebcamServer = async () => {
+    try {
+      setWebcamLoading(true);
+      const response = await postureService.stopWebcamServer();
+      if (response.status === 'success') {
+        setWebcamServerActive(false);
+        setNotification({
+          message: 'Webcam server stopped successfully!',
+          type: 'success'
+        });
+      } else {
+        setNotification({
+          message: response.message || 'Failed to stop webcam server',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      setNotification({
+        message: 'Error stopping webcam server. The server might be in use by monitoring processes.',
+        type: 'error'
+      });
+    } finally {
+      setWebcamLoading(false);
+    }
+  };
 
   // Enhanced posture monitoring functions
   const startPostureMonitoring = async () => {
@@ -246,15 +301,31 @@ const ScriptRunner: React.FC = () => {
       try {
         // Check posture status
         const postureResponse = await postureService.getStatus();
-        if (postureResponse.status === 'success' && postureResponse.data.is_monitoring) {
-          setPostureMonitoring(true);
-          startDataPolling();
+        if (postureResponse.status === 'success') {
+          // Set posture monitoring status
+          if (postureResponse.data.is_monitoring) {
+            setPostureMonitoring(true);
+            startDataPolling();
+          }
+          
+          // Set webcam server status
+          if (postureResponse.data.webcam_server_active) {
+            setWebcamServerActive(true);
+          }
         }
         
         // Check stress status
         const stressResponse = await stressService.getStatus();
-        if (stressResponse.status === 'success' && stressResponse.data.is_monitoring) {
-          setStressMonitoring(true);
+        if (stressResponse.status === 'success') {
+          // Set stress monitoring status
+          if (stressResponse.data.is_monitoring) {
+            setStressMonitoring(true);
+          }
+          
+          // Also check webcam server from stress API if it wasn't active in posture API
+          if (!postureResponse.data?.webcam_server_active && stressResponse.data.webcam_server_active) {
+            setWebcamServerActive(true);
+          }
         }
       } catch (error) {
         console.error('Error checking monitoring status:', error);
@@ -356,6 +427,49 @@ const ScriptRunner: React.FC = () => {
 
   return (
     <Box>
+      {/* Webcam Server Control */}
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h5" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <PlayArrowIcon color="primary" /> Webcam Server Control
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          Start the webcam server separately before running monitoring tools. This allows for more control over system resources.
+        </Typography>
+        
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Button
+            variant={webcamServerActive ? "contained" : "outlined"}
+            color={webcamServerActive ? "error" : "primary"}
+            size="large"
+            startIcon={webcamLoading ? <CircularProgress size={20} /> : webcamServerActive ? <StopIcon /> : <PlayArrowIcon />}
+            onClick={webcamServerActive ? stopWebcamServer : startWebcamServer}
+            disabled={webcamLoading || (webcamServerActive && (postureMonitoring || stressMonitoring))}
+            sx={{ 
+              px: 4,
+              py: 1.5,
+              border: 2,
+              '&:hover': {
+                border: 2,
+              }
+            }}
+          >
+            {webcamServerActive ? 'Stop Webcam Server' : 'Start Webcam Server'}
+          </Button>
+          
+          <Chip 
+            label={webcamServerActive ? "Active" : "Inactive"} 
+            color={webcamServerActive ? "success" : "default"} 
+            variant="outlined"
+          />
+          
+          {webcamServerActive && (postureMonitoring || stressMonitoring) && (
+            <Typography variant="caption" color="warning.main">
+              Cannot stop webcam server while monitoring tools are active.
+            </Typography>
+          )}
+        </Box>
+      </Paper>
+
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h5" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <PlayArrowIcon color="primary" /> Health Monitoring Tools
@@ -512,8 +626,7 @@ const ScriptRunner: React.FC = () => {
                         {postureAlerts.slice(0, 5).map((alert) => (
                           <Alert 
                             key={alert.id} 
-                            severity={alert.level as any} 
-                            size="small"
+                            severity={alert.level as any}
                           >
                             <Typography variant="body2">
                               {alert.message}
@@ -543,16 +656,14 @@ const ScriptRunner: React.FC = () => {
         onClose={handleCloseNotification}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
-        {notification && (
-          <Alert 
-            onClose={handleCloseNotification} 
-            severity={notification.type} 
-            variant="filled"
-            sx={{ width: '100%' }}
-          >
-            {notification.message}
-          </Alert>
-        )}
+        <Alert 
+          onClose={handleCloseNotification} 
+          severity={notification?.type || 'info'} 
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {notification?.message || ''}
+        </Alert>
       </Snackbar>
     </Box>
   );
