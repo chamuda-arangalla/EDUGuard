@@ -10,6 +10,8 @@ import json
 from datetime import datetime
 from utils.database import DatabaseManager
 from utils.alert_manager import AlertManager
+import firebase_admin
+from firebase_admin import credentials, db
 
 # Configure logging
 logger = logging.getLogger('PostureAPI')
@@ -31,6 +33,15 @@ class PostureMonitoringManager:
     def start_webcam_server(self):
         """Start the webcam server if not already running"""
         try:
+            # Import stress_api monitoring manager here to avoid circular imports
+            from stress_api import monitoring_manager as stress_monitoring_manager
+            
+            # Check if webcam server is already running in stress API
+            if stress_monitoring_manager.webcam_process and stress_monitoring_manager.webcam_process.poll() is None:
+                logger.info("Reusing webcam server from stress monitoring")
+                self.webcam_process = stress_monitoring_manager.webcam_process
+                return True, "Reusing existing webcam server"
+            
             # Check if webcam server is already running
             if self.webcam_process and self.webcam_process.poll() is None:
                 logger.info("Webcam server is already running")
@@ -52,6 +63,8 @@ class PostureMonitoringManager:
             # Check if it started successfully
             if self.webcam_process.poll() is None:
                 logger.info("Webcam server started successfully")
+                # Make this webcam process available to stress monitoring
+                stress_monitoring_manager.webcam_process = self.webcam_process
                 return True, "Webcam server started successfully"
             else:
                 stdout, stderr = self.webcam_process.communicate()
@@ -65,12 +78,21 @@ class PostureMonitoringManager:
     def stop_webcam_server(self):
         """Stop the webcam server if it's running"""
         try:
+            # Import stress_api monitoring manager here to avoid circular imports
+            from stress_api import monitoring_manager as stress_monitoring_manager
+            
             if not self.webcam_process:
                 return True, "No webcam server is running"
                 
             if self.webcam_process.poll() is not None:
                 self.webcam_process = None
                 return True, "Webcam server was not running"
+            
+            # Check if stress monitoring is using this webcam server
+            for user_id, process in stress_monitoring_manager.processes.items():
+                if process.poll() is None:
+                    logger.warning("Cannot stop webcam server: Stress monitoring is using it")
+                    return False, "Cannot stop webcam server while stress monitoring is active"
             
             # Terminate the process
             self.webcam_process.terminate()
@@ -84,6 +106,10 @@ class PostureMonitoringManager:
                 self.webcam_process.wait()
             
             self.webcam_process = None
+            # Also clear the reference in stress monitoring
+            if stress_monitoring_manager.webcam_process == self.webcam_process:
+                stress_monitoring_manager.webcam_process = None
+                
             logger.info("Webcam server stopped successfully")
             return True, "Webcam server stopped successfully"
             

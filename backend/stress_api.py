@@ -1,4 +1,3 @@
-from flask import Flask, request, jsonify, Blueprint
 import os
 import sys
 import subprocess
@@ -8,6 +7,7 @@ import threading
 import logging
 import json
 from datetime import datetime
+from flask import Flask, request, jsonify, Blueprint
 from utils.database import DatabaseManager
 from utils.alert_manager import AlertManager
 
@@ -31,6 +31,15 @@ class StressMonitoringManager:
     def start_webcam_server(self):
         """Start the webcam server if not already running"""
         try:
+            # Import posture_api monitoring manager here to avoid circular imports
+            from posture_api import monitoring_manager as posture_monitoring_manager
+            
+            # First check if webcam server is already running in posture API
+            if posture_monitoring_manager.webcam_process and posture_monitoring_manager.webcam_process.poll() is None:
+                logger.info("Reusing webcam server from posture monitoring")
+                self.webcam_process = posture_monitoring_manager.webcam_process
+                return True, "Reusing existing webcam server"
+            
             # Check if webcam server is already running
             if self.webcam_process and self.webcam_process.poll() is None:
                 logger.info("Webcam server is already running")
@@ -52,6 +61,8 @@ class StressMonitoringManager:
             # Check if it started successfully
             if self.webcam_process.poll() is None:
                 logger.info("Webcam server started successfully")
+                # Also share webcam process with posture monitoring
+                posture_monitoring_manager.webcam_process = self.webcam_process
                 return True, "Webcam server started successfully"
             else:
                 stdout, stderr = self.webcam_process.communicate()
@@ -65,12 +76,21 @@ class StressMonitoringManager:
     def stop_webcam_server(self):
         """Stop the webcam server if it's running"""
         try:
+            # Import posture_api monitoring manager here to avoid circular imports
+            from posture_api import monitoring_manager as posture_monitoring_manager
+            
             if not self.webcam_process:
                 return True, "No webcam server is running"
                 
             if self.webcam_process.poll() is not None:
                 self.webcam_process = None
                 return True, "Webcam server was not running"
+            
+            # Check if posture monitoring is using this webcam server
+            for user_id, process in posture_monitoring_manager.processes.items():
+                if process.poll() is None:
+                    logger.warning("Cannot stop webcam server: Posture monitoring is using it")
+                    return False, "Cannot stop webcam server while posture monitoring is active"
             
             # Terminate the process
             self.webcam_process.terminate()
@@ -84,6 +104,10 @@ class StressMonitoringManager:
                 self.webcam_process.wait()
             
             self.webcam_process = None
+            # Also clear the reference in posture monitoring
+            if posture_monitoring_manager.webcam_process == self.webcam_process:
+                posture_monitoring_manager.webcam_process = None
+                
             logger.info("Webcam server stopped successfully")
             return True, "Webcam server stopped successfully"
             

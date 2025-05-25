@@ -71,7 +71,7 @@ interface PostureAlert {
 
 const ScriptRunner: React.FC = () => {
   const [loading, setLoading] = useState<number | null>(null);
-  const [notification, setNotification] = useState<{message: string, type: 'success' | 'error' | 'warning'} | null>(null);
+  const [notification, setNotification] = useState<{message: string, type: 'success' | 'error' | 'warning' | 'info'} | null>(null);
   const [postureMonitoring, setPostureMonitoring] = useState(false);
   const [postureData, setPostureData] = useState<PostureData | null>(null);
   const [postureAlerts, setPostureAlerts] = useState<PostureAlert[]>([]);
@@ -136,6 +136,18 @@ const ScriptRunner: React.FC = () => {
   // Enhanced posture monitoring functions
   const startPostureMonitoring = async () => {
     try {
+      // If webcam server is not active, try to start it first
+      if (!webcamServerActive) {
+        setNotification({
+          message: 'Starting webcam server first...',
+          type: 'info'
+        });
+        
+        await startWebcamServer();
+        // Small delay to ensure webcam server is fully started
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
       const response = await postureService.startMonitoring();
       if (response.status === 'success') {
         setPostureMonitoring(true);
@@ -187,6 +199,18 @@ const ScriptRunner: React.FC = () => {
   // Stress monitoring functions
   const startStressMonitoring = async () => {
     try {
+      // If webcam server is not active, try to start it first
+      if (!webcamServerActive) {
+        setNotification({
+          message: 'Starting webcam server first...',
+          type: 'info'
+        });
+        
+        await startWebcamServer();
+        // Small delay to ensure webcam server is fully started
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
       const response = await stressService.startMonitoring();
       if (response.status === 'success') {
         setStressMonitoring(true);
@@ -658,7 +682,7 @@ const ScriptRunner: React.FC = () => {
       >
         <Alert 
           onClose={handleCloseNotification} 
-          severity={notification?.type || 'info'} 
+          severity={notification?.type as 'success' | 'error' | 'warning' | 'info'} 
           variant="filled"
           sx={{ width: '100%' }}
         >
