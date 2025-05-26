@@ -7,15 +7,11 @@ import {
   Paper,
   Alert,
   Chip,
-  Divider,
-  Stack,
   LinearProgress,
   Avatar,
   CircularProgress,
   useTheme,
   useMediaQuery,
-  Card,
-  CardContent,
 } from '@mui/material';
 import Webcam from 'react-webcam';
 import { useAuth } from '../contexts/AuthContext';
@@ -25,9 +21,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import VideocamIcon from '@mui/icons-material/Videocam';
 import AssessmentIcon from '@mui/icons-material/Assessment';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TimelineIcon from '@mui/icons-material/Timeline';
-import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import PersonIcon from '@mui/icons-material/Person';
 import ScriptRunner from './ScriptRunner';
 
@@ -46,7 +40,6 @@ const Dashboard: React.FC = () => {
   const { user, userProfile, profileLoading, refreshProfile } = useAuth();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const isTablet = useMediaQuery(theme.breakpoints.down('md'));
 
   // Don't auto-refresh the profile when component mounts to avoid excessive API calls
   // useEffect(() => {

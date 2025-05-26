@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Toolbar, AppBar, IconButton, Typography, useTheme, useMediaQuery } from '@mui/material';
+import {
+  Box,
+  Toolbar,
+  AppBar,
+  IconButton,
+  Typography,
+  useTheme,
+  useMediaQuery,
+} from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import SideNavigation from './SideNavigation';
 
@@ -16,8 +24,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'md'));
-  
-  // Close mobile drawer when screen size changes to desktop
+
   useEffect(() => {
     if (!isSmallScreen && mobileOpen) {
       setMobileOpen(false);
@@ -27,22 +34,43 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
   };
-  
-  // Calculate the drawer width based on screen size
+
   const sidebarWidth = isTablet ? drawerCollapsedWidth : drawerExpandedWidth;
 
   return (
-    <Box sx={{ 
-      display: 'flex', 
-      height: '100vh', 
-      overflow: 'hidden',
-      bgcolor: 'background.default',
-    }}>
+    <Box
+      sx={{
+        display: 'flex',
+        height: '100vh',
+        bgcolor: 'background.default',
+        overflow: 'hidden',
+      }}
+    >
       {/* Sidebar navigation */}
-      <SideNavigation 
-        mobileOpen={mobileOpen} 
-        onMobileClose={handleDrawerToggle} 
-      />
+      <Box
+        sx={{
+          width: {
+            xs: 0,
+            sm: `${drawerCollapsedWidth}px`,
+            md: `${drawerExpandedWidth}px`,
+          },
+          height: '100vh',
+          bgcolor: 'background.paper',
+          position: 'fixed',
+          zIndex: theme.zIndex.drawer,
+          display: { xs: 'none', sm: 'block' },
+        }}
+      >
+        <SideNavigation />
+      </Box>
+
+      {/* Mobile Sidebar */}
+      {isSmallScreen && (
+        <SideNavigation
+          mobileOpen={mobileOpen}
+          onMobileClose={handleDrawerToggle}
+        />
+      )}
 
       {/* Main content */}
       <Box
@@ -51,27 +79,22 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
           flexGrow: 1,
           width: '100%',
           height: '100vh',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-          ml: { 
+          ml: {
             xs: 0,
             sm: `${drawerCollapsedWidth}px`,
-            md: `${drawerExpandedWidth}px`
+            md: `${drawerExpandedWidth}px`,
           },
-          transition: 'none',
-          position: 'relative',
-          zIndex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
         }}
       >
-        {/* Mobile app bar */}
+        {/* App Bar for Mobile */}
         <AppBar
           position="fixed"
           elevation={0}
           sx={{
             display: { xs: 'flex', sm: 'none' },
-            width: { xs: '100%', sm: `calc(100% - ${drawerCollapsedWidth}px)` },
-            ml: { xs: 0, sm: `${drawerCollapsedWidth}px` },
             bgcolor: 'background.paper',
             color: 'text.primary',
             borderBottom: '1px solid',
@@ -82,7 +105,6 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
           <Toolbar sx={{ px: 2 }}>
             <IconButton
               color="inherit"
-              aria-label="open drawer"
               edge="start"
               onClick={handleDrawerToggle}
               sx={{ mr: 2 }}
@@ -94,21 +116,23 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
             </Typography>
           </Toolbar>
         </AppBar>
-        
-        {/* Toolbar spacer for mobile only */}
+
+        {/* Spacer for mobile app bar */}
         <Box sx={{ display: { xs: 'block', sm: 'none' } }}>
           <Toolbar />
         </Box>
 
-        {/* Page content with scrolling */}
-        <Box sx={{ 
-          flexGrow: 1, 
-          p: { xs: 1.5, sm: 2, md: 2.5 },
-          overflow: 'auto',
-          width: '100%',
-          height: '100%',
-          boxSizing: 'border-box',
-        }}>
+        {/* Content container */}
+        <Box
+          sx={{
+            flexGrow: 1,
+            p: { xs: 1.5, sm: 2, md: 2.5 },
+            overflow: 'auto',
+            width: '100%',
+            height: '100%',
+            boxSizing: 'border-box',
+          }}
+        >
           {children}
         </Box>
       </Box>
@@ -116,4 +140,4 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   );
 };
 
-export default Layout; 
+export default Layout;
