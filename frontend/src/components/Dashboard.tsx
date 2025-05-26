@@ -193,7 +193,7 @@ const Dashboard: React.FC = () => {
                     </Typography>
                   </Box>
                 )}
-                <Box sx={{ mt: 'auto', pt: 2 }}>
+                {/* <Box sx={{ mt: 'auto', pt: 2 }}>
                   <Button 
                     variant="outlined" 
                     size="small" 
@@ -202,7 +202,7 @@ const Dashboard: React.FC = () => {
                   >
                     Refresh Profile
                   </Button>
-                </Box>
+                </Box> */}
               </Box>
             )}
           </Paper>
