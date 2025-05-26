@@ -20,6 +20,7 @@ from posture_api import posture_bp
 from stress_api import stress_bp
 from cvs_api import cvs_bp
 from hydration_api import hydration_bp
+from reports_api import reports_bp
 
 # Load environment variables
 load_dotenv()
@@ -34,14 +35,27 @@ logger = logging.getLogger('EDUGuard-Backend')
 # Initialize Flask application
 app = Flask(__name__)
 
-# Enable CORS for all routes and origins
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+# Enable CORS for all routes and origins with more explicit configuration
+CORS(app, 
+     resources={r"/api/*": {"origins": "*"}},
+     allow_headers=["Content-Type", "Authorization", "X-User-ID", "X-User-Id", "x-user-id"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     supports_credentials=True)
+
+# Additional CORS handling for preflight requests
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-User-ID,X-User-Id,x-user-id')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
 
 # Register API blueprints
 app.register_blueprint(posture_bp)
 app.register_blueprint(stress_bp)
 app.register_blueprint(cvs_bp)
 app.register_blueprint(hydration_bp)
+app.register_blueprint(reports_bp)
 
 def get_user_id_from_request():
     """Get the user ID from the request headers or parameters"""

@@ -36,6 +36,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
+import OpacityIcon from '@mui/icons-material/Opacity';
 
 // API Services
 import { postureService, stressService, cvsService, hydrationService } from '../services/api';
@@ -300,17 +301,11 @@ const ScriptRunner: React.FC = () => {
       const response = await postureService.startMonitoring();
       if (response.status === 'success') {
         setPostureMonitoring(true);
-        setNotification({
-          message: 'Enhanced posture monitoring started successfully!',
-          type: 'success'
-        });
+        showEnhancedNotification('Enhanced posture monitoring started successfully!', 'success');
         // Start polling for data
         startDataPolling();
       } else {
-        setNotification({
-          message: response.message || 'Failed to start posture monitoring',
-          type: 'error'
-        });
+        showEnhancedNotification(response.message || 'Failed to start posture monitoring', 'error');
       }
     } catch (error) {
       setNotification({
@@ -427,12 +422,20 @@ const ScriptRunner: React.FC = () => {
       const response = await stressService.startMonitoring();
       if (response.status === 'success') {
         setStressMonitoring(true);
-        setNotification({
-          message: 'Stress monitoring started successfully!',
-          type: 'success'
-        });
+        showEnhancedNotification('Stress monitoring started successfully!', 'success');
+        
         // Start polling for stress data
         startStressDataPolling();
+        
+        // Trigger an initial check to ensure the backend starts monitoring properly
+        setTimeout(async () => {
+          try {
+            await stressService.triggerAlertCheck();
+            console.log('Initial stress monitoring check triggered');
+          } catch (error) {
+            console.error('Error triggering initial stress check:', error);
+          }
+        }, 3000);
       } else {
         setNotification({
           message: response.message || 'Failed to start stress monitoring',
@@ -482,6 +485,12 @@ const ScriptRunner: React.FC = () => {
         if (dataResponse.status === 'success') {
           setStressData(dataResponse.data);
           
+          // Trigger alert check to ensure continuous monitoring
+          if (dataResponse.data?.average?.high_stress_percentage > 30) {
+            // Trigger alert check if stress levels are elevated
+            await stressService.triggerAlertCheck();
+          }
+          
           // Check for new alerts
           const alertsResponse = await stressService.getRecentAlerts(10);
           if (alertsResponse.status === 'success') {
@@ -514,6 +523,9 @@ const ScriptRunner: React.FC = () => {
         const dataResponse = await stressService.getRecentData(5, true);
         if (dataResponse.status === 'success') {
           setStressData(dataResponse.data);
+          
+          // Trigger initial alert check to ensure monitoring starts properly
+          await stressService.triggerAlertCheck();
         }
         const alertsResponse = await stressService.getRecentAlerts(10);
         if (alertsResponse.status === 'success') {
@@ -522,6 +534,17 @@ const ScriptRunner: React.FC = () => {
       } catch (error) {
         console.error('Error getting initial stress data:', error);
       }
+      
+      // Schedule a periodic monitoring check to ensure system stays active
+      setTimeout(async () => {
+        try {
+          // This ensures the backend continues monitoring even if there's a temporary hiccup
+          await stressService.triggerAlertCheck();
+          console.log('Stress monitoring heartbeat check triggered');
+        } catch (error) {
+          console.error('Error triggering stress monitoring heartbeat:', error);
+        }
+      }, 15000);
     }, 3000);
   };
 
@@ -554,12 +577,20 @@ const ScriptRunner: React.FC = () => {
       const response = await cvsService.startMonitoring();
       if (response.status === 'success') {
         setCvsMonitoring(true);
-        setNotification({
-          message: 'Eye strain monitoring started successfully!',
-          type: 'success'
-        });
+        showEnhancedNotification('Eye strain monitoring started successfully!', 'success');
+        
         // Start polling for CVS data
         startCVSDataPolling();
+        
+        // Trigger an initial check to ensure the backend starts monitoring properly
+        setTimeout(async () => {
+          try {
+            await cvsService.triggerAlertCheck();
+            console.log('Initial eye strain monitoring check triggered');
+          } catch (error) {
+            console.error('Error triggering initial eye strain check:', error);
+          }
+        }, 3000);
       } else {
         setNotification({
           message: response.message || 'Failed to start eye strain monitoring',
@@ -610,6 +641,17 @@ const ScriptRunner: React.FC = () => {
           console.log('CVS data received:', dataResponse.data);
           setCvsData(dataResponse.data);
           
+          // Trigger alert check to ensure continuous monitoring
+          if (dataResponse.data?.average) {
+            const lowBlinkPercentage = dataResponse.data.average.low_blink_percentage;
+            const highBlinkPercentage = dataResponse.data.average.high_blink_percentage;
+            
+            if (lowBlinkPercentage > 40 || highBlinkPercentage > 40) {
+              // Trigger alert check if blink rate is abnormal
+              await cvsService.triggerAlertCheck();
+            }
+          }
+          
           // Check for new alerts
           const alertsResponse = await cvsService.getRecentAlerts(10);
           if (alertsResponse.status === 'success') {
@@ -645,6 +687,9 @@ const ScriptRunner: React.FC = () => {
         if (dataResponse.status === 'success') {
           console.log('Initial CVS data received:', dataResponse.data);
           setCvsData(dataResponse.data);
+          
+          // Trigger initial alert check to ensure monitoring starts properly
+          await cvsService.triggerAlertCheck();
         } else {
           console.warn('Failed to get initial CVS data:', dataResponse);
           // Set default data if none received
@@ -672,6 +717,17 @@ const ScriptRunner: React.FC = () => {
         } else {
           console.warn('Failed to get CVS alerts:', alertsResponse);
         }
+        
+        // Schedule a periodic monitoring check to ensure system stays active
+        setTimeout(async () => {
+          try {
+            // This ensures the backend continues monitoring even if there's a temporary hiccup
+            await cvsService.triggerAlertCheck();
+            console.log('CVS monitoring heartbeat check triggered');
+          } catch (error) {
+            console.error('Error triggering CVS monitoring heartbeat:', error);
+          }
+        }, 15000);
       } catch (error) {
         console.error('Error getting initial CVS data:', error);
         // Set default data if error occurs
@@ -758,12 +814,20 @@ const ScriptRunner: React.FC = () => {
         
         if (response.status === 'success') {
           setHydrationMonitoring(true);
-          setNotification({
-            message: 'Hydration monitoring started successfully!',
-            type: 'success'
-          });
+          showEnhancedNotification('Hydration monitoring started successfully!', 'success');
+          
           // Start polling for data
           startHydrationDataPolling();
+          
+          // Trigger an initial alert check to ensure data collection starts properly
+          setTimeout(async () => {
+            try {
+              await hydrationService.triggerAlertCheck();
+              console.log('Initial hydration alert check triggered');
+            } catch (error) {
+              console.error('Error triggering initial hydration alert check:', error);
+            }
+          }, 5000);
         } else {
           // If the response indicates an error but the webcam server might be running
           if (response.message && response.message.includes('socket address')) {
@@ -782,6 +846,17 @@ const ScriptRunner: React.FC = () => {
                 });
                 // Start polling for data
                 startHydrationDataPolling();
+                
+                // Trigger an initial alert check after retry to ensure data collection starts properly
+                setTimeout(async () => {
+                  try {
+                    await hydrationService.triggerAlertCheck();
+                    console.log('Initial hydration alert check triggered after retry');
+                  } catch (error) {
+                    console.error('Error triggering initial hydration alert check after retry:', error);
+                  }
+                }, 5000);
+                
                 return;
               }
             } catch (retryError) {
@@ -848,6 +923,12 @@ const ScriptRunner: React.FC = () => {
           console.log('Hydration data received:', dataResponse.data);
           setHydrationData(dataResponse.data);
           
+          // Check for dry lips percentage and trigger alert check if needed
+          if (dataResponse.data?.average?.dry_lips_percentage > 60) {
+            // Trigger alert check to generate alerts
+            await hydrationService.triggerAlertCheck();
+          }
+          
           // Check for new alerts
           const alertsResponse = await hydrationService.getRecentAlerts(10);
           if (alertsResponse.status === 'success') {
@@ -881,6 +962,11 @@ const ScriptRunner: React.FC = () => {
         if (dataResponse.status === 'success') {
           console.log('Initial hydration data received:', dataResponse.data);
           setHydrationData(dataResponse.data);
+          
+          // Check if we need to trigger an alert for initial data
+          if (dataResponse.data?.average?.dry_lips_percentage > 60) {
+            await hydrationService.triggerAlertCheck();
+          }
         } else {
           console.warn('Failed to get initial hydration data:', dataResponse);
           // Set default data if none received
@@ -903,6 +989,18 @@ const ScriptRunner: React.FC = () => {
         const alertsResponse = await hydrationService.getRecentAlerts(10);
         if (alertsResponse.status === 'success') {
           setHydrationAlerts(alertsResponse.data.alerts);
+          
+          // If we have any alerts that indicate dry lips > 60%, show notification
+          const dryLipsAlert = alertsResponse.data.alerts.find((alert: HydrationAlert) => 
+            alert.data && alert.data.dry_lips_percentage > 60
+          );
+          
+          if (dryLipsAlert) {
+            setNotification({
+              message: dryLipsAlert.message || "Warning: High levels of lip dryness detected. Please stay hydrated!",
+              type: 'warning'
+            });
+          }
         } else {
           console.warn('Failed to get hydration alerts:', alertsResponse);
         }
@@ -1045,6 +1143,227 @@ const ScriptRunner: React.FC = () => {
       if (hydrationPollingInterval) clearInterval(hydrationPollingInterval);
     };
   }, []);
+
+  // Periodic heartbeat effect for continuous monitoring
+  useEffect(() => {
+    // Only run heartbeats if at least one monitoring system is active
+    if (!stressMonitoring && !cvsMonitoring && !postureMonitoring && !hydrationMonitoring) {
+      return;
+    }
+    
+    console.log('Starting monitoring heartbeat system with active alerts every 2 minutes');
+    
+    // Send heartbeat every 2 minutes to ensure continuous monitoring and check for alerts
+    const heartbeatInterval = setInterval(async () => {
+      try {
+        // Check posture monitoring
+        if (postureMonitoring) {
+          // Trigger alert check
+          await postureService.triggerAlertCheck();
+          
+          // Get latest data
+          const postureResponse = await postureService.getRecentData(5, true);
+          if (postureResponse.status === 'success' && postureResponse.data?.average) {
+            const badPosturePercentage = postureResponse.data.average.bad_posture_percentage;
+            
+            // Show alert if bad posture detected
+            if (badPosturePercentage > 60) {
+              setNotification({
+                message: `Alert: Poor posture detected (${badPosturePercentage.toFixed(1)}%)! Please adjust your sitting position.`,
+                type: 'warning'
+              });
+            }
+          }
+          console.log('Posture monitoring heartbeat sent and alerts checked');
+        }
+        
+        // Check stress monitoring
+        if (stressMonitoring) {
+          // Trigger alert check
+          await stressService.triggerAlertCheck();
+          
+          // Get latest data
+          const stressResponse = await stressService.getRecentData(5, true);
+          if (stressResponse.status === 'success' && stressResponse.data?.average) {
+            const highStressPercentage = stressResponse.data.average.high_stress_percentage;
+            
+            // Show alert if high stress detected
+            if (highStressPercentage > 60) {
+              setNotification({
+                message: `Alert: High stress levels detected (${highStressPercentage.toFixed(1)}%)! Consider taking a short break.`,
+                type: 'warning'
+              });
+            }
+          }
+          console.log('Stress monitoring heartbeat sent and alerts checked');
+        }
+        
+        // Check CVS monitoring
+        if (cvsMonitoring) {
+          // Trigger alert check
+          await cvsService.triggerAlertCheck();
+          
+          // Get latest data
+          const cvsResponse = await cvsService.getRecentData(5, true);
+          if (cvsResponse.status === 'success' && cvsResponse.data?.average) {
+            const lowBlinkPercentage = cvsResponse.data.average.low_blink_percentage;
+            const highBlinkPercentage = cvsResponse.data.average.high_blink_percentage;
+            
+            // Show alert if abnormal blink rate detected
+            if (lowBlinkPercentage > 60) {
+              setNotification({
+                message: `Alert: Low blink rate detected (${lowBlinkPercentage.toFixed(1)}%)! This may cause dry eyes.`,
+                type: 'warning'
+              });
+            } else if (highBlinkPercentage > 60) {
+              setNotification({
+                message: `Alert: High blink rate detected (${highBlinkPercentage.toFixed(1)}%)! This indicates eye fatigue.`,
+                type: 'warning'
+              });
+            }
+          }
+          console.log('Eye strain monitoring heartbeat sent and alerts checked');
+        }
+        
+        // Check hydration monitoring
+        if (hydrationMonitoring) {
+          // Trigger alert check
+          await hydrationService.triggerAlertCheck();
+          
+          // Get latest data
+          const hydrationResponse = await hydrationService.getRecentData(5, true);
+          if (hydrationResponse.status === 'success' && hydrationResponse.data?.average) {
+            const dryLipsPercentage = hydrationResponse.data.average.dry_lips_percentage;
+            
+            // Show alert if dry lips detected
+            if (dryLipsPercentage > 60) {
+              setNotification({
+                message: `Alert: Dry lips detected (${dryLipsPercentage.toFixed(1)}%)! Consider drinking water to stay hydrated.`,
+                type: 'warning'
+              });
+            }
+          }
+          console.log('Hydration monitoring heartbeat sent and alerts checked');
+        }
+      } catch (error) {
+        console.error('Error in monitoring heartbeat and alert check:', error);
+      }
+    }, 120000); // 2 minutes
+    
+    return () => {
+      clearInterval(heartbeatInterval);
+    };
+  }, [stressMonitoring, cvsMonitoring, postureMonitoring, hydrationMonitoring]);
+
+  // Function to play sound when alerts are triggered
+  const playAlertSound = () => {
+    try {
+      const audio = new Audio('/notification-sound.mp3');
+      audio.volume = 0.5;
+      audio.play().catch(e => console.log('Audio play error (browser may require user interaction):', e));
+    } catch (e) {
+      console.log('Error playing alert sound:', e);
+    }
+  };
+
+  // Enhanced notification function
+  const showEnhancedNotification = (message: string, type: 'success' | 'error' | 'warning' | 'info') => {
+    setNotification({
+      message,
+      type
+    });
+    
+    // Play sound for warnings and errors
+    if (type === 'warning' || type === 'error') {
+      playAlertSound();
+    }
+  };
+
+  // Modify the checkAllMonitoringStatus function to use the enhanced notification
+  const checkAllMonitoringStatus = async () => {
+    const alerts = [];
+    
+    try {
+      // Check posture monitoring
+      if (postureMonitoring && postureData?.average) {
+        const badPosturePercentage = postureData.average.bad_posture_percentage;
+        if (badPosturePercentage > 60) {
+          alerts.push(`Posture: Poor posture detected (${badPosturePercentage.toFixed(1)}%)`);
+        }
+      }
+      
+      // Check stress monitoring
+      if (stressMonitoring && stressData?.average) {
+        const highStressPercentage = stressData.average.high_stress_percentage;
+        if (highStressPercentage > 60) {
+          alerts.push(`Stress: High stress levels detected (${highStressPercentage.toFixed(1)}%)`);
+        }
+      }
+      
+      // Check CVS monitoring
+      if (cvsMonitoring && cvsData?.average) {
+        const lowBlinkPercentage = cvsData.average.low_blink_percentage;
+        const highBlinkPercentage = cvsData.average.high_blink_percentage;
+        
+        if (lowBlinkPercentage > 60) {
+          alerts.push(`Eye Strain: Low blink rate detected (${lowBlinkPercentage.toFixed(1)}%)`);
+        } else if (highBlinkPercentage > 60) {
+          alerts.push(`Eye Strain: High blink rate detected (${highBlinkPercentage.toFixed(1)}%)`);
+        }
+      }
+      
+      // Check hydration monitoring
+      if (hydrationMonitoring && hydrationData?.average) {
+        const dryLipsPercentage = hydrationData.average.dry_lips_percentage;
+        if (dryLipsPercentage > 60) {
+          alerts.push(`Hydration: Dry lips detected (${dryLipsPercentage.toFixed(1)}%)`);
+        }
+      }
+      
+      // If there are any alerts, show a combined notification
+      if (alerts.length > 0) {
+        showEnhancedNotification(`Health Alerts: ${alerts.join(' | ')}`, 'warning');
+        return true;
+      }
+    } catch (error) {
+      console.error('Error checking monitoring status:', error);
+    }
+    
+    return false;
+  };
+
+  // Add effect to check all monitoring status regularly
+  useEffect(() => {
+    // Only run if at least one monitoring system is active
+    if (!stressMonitoring && !cvsMonitoring && !postureMonitoring && !hydrationMonitoring) {
+      return;
+    }
+    
+    console.log('Starting regular status check for all monitoring systems (every 2 minutes)');
+    
+    // Show initial combined status
+    checkAllMonitoringStatus().then(hasAlerts => {
+      if (hasAlerts) {
+        playAlertSound();
+      }
+    });
+    
+    // Check status every 2 minutes (120000 ms)
+    const statusInterval = setInterval(async () => {
+      const hasAlerts = await checkAllMonitoringStatus();
+      if (hasAlerts) {
+        playAlertSound();
+        console.log('Alerts detected during 2-minute check interval');
+      }
+    }, 120000); // 2 minutes
+    
+    return () => {
+      clearInterval(statusInterval);
+    };
+  }, [
+    stressMonitoring, cvsMonitoring, postureMonitoring, hydrationMonitoring,
+    stressData, cvsData, postureData, hydrationData
+  ]);
 
   // -----------------------------------------------------------------------------
   // Script Management
@@ -1609,6 +1928,138 @@ const ScriptRunner: React.FC = () => {
         </Paper>
       )}
 
+      {/* Hydration Monitoring Dashboard */}
+      {hydrationMonitoring && (
+        <Paper sx={{ p: { xs: 2, sm: 3 }, mb: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <OpacityIcon color="info" /> Hydration Monitoring Dashboard
+            </Typography>
+            <IconButton onClick={() => setExpandedHydration(!expandedHydration)}>
+              {expandedHydration ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </IconButton>
+          </Box>
+
+          <Collapse in={expandedHydration}>
+            <Grid container spacing={3}>
+              {/* Current Status */}
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent sx={{ p: 2 }}>
+                    <Typography variant="h6" gutterBottom>
+                      Current Status (Last 5 minutes)
+                    </Typography>
+                    {hydrationData?.average ? (
+                      <Box>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Dry Lips</Typography>
+                          <Typography variant="body2" fontWeight="bold" color="error.main">
+                            {hydrationData.average.dry_lips_percentage.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={hydrationData.average.dry_lips_percentage} 
+                          color="error"
+                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
+                        />
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Normal Hydration</Typography>
+                          <Typography variant="body2" fontWeight="bold" color="success.main">
+                            {hydrationData.average.normal_lips_percentage.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={hydrationData.average.normal_lips_percentage} 
+                          color="success"
+                          sx={{ mb: 2, height: 8, borderRadius: 1 }}
+                        />
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="body2">Average Dryness Score</Typography>
+                          <Typography variant="body2" fontWeight="bold" color={
+                            hydrationData.average.avg_dryness_score > 0.7 ? "error.main" : 
+                            hydrationData.average.avg_dryness_score > 0.4 ? "warning.main" : "success.main"
+                          }>
+                            {hydrationData.average.avg_dryness_score.toFixed(2)}
+                          </Typography>
+                        </Box>
+                        
+                        <Typography variant="caption" color="text.secondary">
+                          Total samples: {hydrationData.average.total_samples}
+                        </Typography>
+                        
+                        {hydrationData.average.dry_lips_percentage > 60 && (
+                          <Alert severity="warning" sx={{ mt: 2 }}>
+                            <strong>Warning:</strong> Dry lips detected! Consider drinking water and staying hydrated.
+                          </Alert>
+                        )}
+                      </Box>
+                    ) : (
+                      <Box>
+                        <Typography color="text.secondary" sx={{ mb: 2 }}>
+                          Collecting data... Please wait for initial readings.
+                        </Typography>
+                        <LinearProgress 
+                          sx={{ mb: 1, height: 6, borderRadius: 1 }} 
+                        />
+                        <Typography variant="caption" color="text.secondary">
+                          Initial analysis may take up to 5 minutes to collect sufficient data.
+                        </Typography>
+                      </Box>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Recent Alerts */}
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent sx={{ p: 2 }}>
+                    <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <NotificationsActiveIcon color="warning" /> Recent Alerts
+                    </Typography>
+                    {hydrationAlerts.length > 0 ? (
+                      <Stack spacing={1} sx={{ maxHeight: 200, overflowY: 'auto' }}>
+                        {hydrationAlerts.slice(0, 5).map((alert) => (
+                          <Alert 
+                            key={alert.id} 
+                            severity={alert.level as any}
+                          >
+                            <Typography variant="body2">
+                              {alert.message}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {new Date(alert.created_at).toLocaleTimeString()}
+                            </Typography>
+                          </Alert>
+                        ))}
+                      </Stack>
+                    ) : (
+                      <Box>
+                        <Typography color="text.secondary" sx={{ mb: 2 }}>
+                          {hydrationData?.average && hydrationData.average.total_samples > 3 
+                            ? "No recent alerts. Hydration levels are good!" 
+                            : "Collecting data to generate alerts..."}
+                        </Typography>
+                        {(!hydrationData?.average || hydrationData.average.total_samples <= 3) && (
+                          <LinearProgress 
+                            sx={{ mb: 1, height: 6, borderRadius: 1 }} 
+                            color="warning"
+                          />
+                        )}
+                      </Box>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          </Collapse>
+        </Paper>
+      )}
+
       {/* Notifications */}
       {notification && (
       <Snackbar 
@@ -1616,10 +2067,28 @@ const ScriptRunner: React.FC = () => {
         autoHideDuration={6000} 
         onClose={handleCloseNotification}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ 
+          '& .MuiAlert-root': {
+            width: '100%',
+            maxWidth: '600px',
+            fontSize: notification.type === 'warning' ? '1rem' : 'inherit',
+            fontWeight: notification.type === 'warning' ? 'bold' : 'normal',
+            boxShadow: notification.type === 'warning' ? '0 0 10px rgba(255, 152, 0, 0.5)' : 'none'
+          }
+        }}
+      >
+        <Alert 
+          onClose={handleCloseNotification} 
+          severity={notification.type} 
+          sx={{ 
+            width: '100%',
+            '& .MuiAlert-icon': {
+              fontSize: notification.type === 'warning' ? '1.5rem' : '1.25rem'
+            }
+          }}
         >
-          <Alert onClose={handleCloseNotification} severity={notification.type} sx={{ width: '100%' }}>
-            {notification.message}
-          </Alert>
+          {notification.message}
+        </Alert>
       </Snackbar>
       )}
     </Box>

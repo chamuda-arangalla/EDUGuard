@@ -560,10 +560,10 @@ class DatabaseManager:
             return False
     
     def update_user_profile(self, update_data):
-        """Update a user's profile.
+        """Update a user's profile data in the database.
         
         Args:
-            update_data (dict): Data to update in the profile.
+            update_data (dict): The profile data to update.
             
         Returns:
             bool: True if successful, False otherwise.
@@ -571,12 +571,592 @@ class DatabaseManager:
         try:
             if self.db_type == 'firebase':
                 self.users_ref.update(update_data)
-                logger.info(f"[SUCCESS] Updated user profile in FIREBASE for user {self.user_id}")
+                logger.info(f"[UPDATED IN FIREBASE] User profile for {self.user_id}")
+                return True
             else:
+                # Local DB operation
                 self.local_db['user_profile'].update(update_data)
-                logger.warning(f"[WARNING] Updated user profile in LOCAL DB for user {self.user_id}")
-                
-            return True
+                logger.warning(f"[UPDATED IN LOCAL DB] User profile for {self.user_id}")
+                return True
         except Exception as e:
             logger.error(f"Error updating user profile: {e}")
             return False
+            
+    # -----------------------------------------------------------------------------
+    # Reports Data Methods
+    # -----------------------------------------------------------------------------
+    def get_posture_data_range(self, start_date, end_date):
+        """Get posture data for a specific date range."""
+        try:
+            # Convert dates to timestamps (milliseconds)
+            start_timestamp = int(datetime.combine(start_date, datetime.min.time()).timestamp() * 1000)
+            end_timestamp = int(datetime.combine(end_date, datetime.max.time()).timestamp() * 1000)
+            
+            logger.info(f"Fetching posture data from {start_date} to {end_date} (timestamps: {start_timestamp} to {end_timestamp})")
+            
+            if self.db_type == 'firebase':
+                try:
+                    from firebase_admin import db
+                    
+                    # Get data from Firebase ordered by timestamp
+                    posture_ref = self.predictions_ref.child('posture')
+                    logger.info(f"Querying Firebase path: predictions/{self.user_id}/posture")
+                    
+                    # First try to get all data and filter in code (more reliable)
+                    all_results = posture_ref.get()
+                    logger.debug(f"Raw Firebase response: {all_results}")
+                    
+                    # Convert to list of entries
+                    data = []
+                    if all_results:
+                        for key, value in all_results.items():
+                            # Get timestamp for filtering
+                            entry_timestamp = value.get('timestamp', 0)
+                            
+                            # Filter by time range
+                            if entry_timestamp >= start_timestamp and entry_timestamp <= end_timestamp:
+                                # Extract data
+                                entry = {'timestamp': entry_timestamp}
+                                
+                                # Check for different data structures
+                                if 'prediction' in value:
+                                    if 'average' in value['prediction']:
+                                        # From average data
+                                        entry['good_posture_percentage'] = value['prediction']['average'].get('good_posture_percentage', 0)
+                                        entry['bad_posture_percentage'] = value['prediction']['average'].get('bad_posture_percentage', 0)
+                                        entry['total_samples'] = value['prediction']['average'].get('total_samples', 0)
+                                    elif 'posture' in value['prediction']:
+                                        # From direct prediction
+                                        good_posture = 100 if value['prediction']['posture'] == 'Good Posture' else 0
+                                        entry['good_posture_percentage'] = good_posture
+                                        entry['bad_posture_percentage'] = 100 - good_posture
+                                        entry['total_samples'] = 1
+                                    else:
+                                        continue
+                                else:
+                                    continue
+                                    
+                                # Add to result list
+                                data.append(entry)
+                    
+                    # Group by timeframe (hourly for daily, daily for weekly, etc.)
+                    # This helps when we have too many data points
+                    grouped_data = self._group_time_series_data(data, start_date, end_date, 'posture')
+                    
+                    logger.info(f"Retrieved {len(data)} raw posture entries, grouped into {len(grouped_data)} entries")
+                    return grouped_data
+                except Exception as e:
+                    logger.error(f"Firebase error fetching posture data: {e}")
+                    return []
+            else:
+                # Return empty array instead of sample data
+                logger.warning(f"Firebase not available. Returning empty posture data for date range {start_date} to {end_date}")
+                return []
+        except Exception as e:
+            logger.error(f"Error retrieving posture data for date range: {e}")
+            return []
+        
+    def _group_time_series_data(self, data, start_date, end_date, data_type):
+        """Group time series data by appropriate time intervals based on date range.
+        
+        Args:
+            data (list): List of data entries with timestamps.
+            start_date (datetime.date): Start date.
+            end_date (datetime.date): End date.
+            data_type (str): Type of data ('posture', 'stress', 'cvs', 'hydration').
+            
+        Returns:
+            list: List of grouped data entries.
+        """
+        if not data:
+            logger.warning(f"No data available for {data_type} in date range {start_date} to {end_date}")
+            return []
+        
+        # Sort data by timestamp
+        data.sort(key=lambda x: x.get('timestamp', 0))
+        
+        # Determine grouping interval
+        days_difference = (end_date - start_date).days
+        
+        if days_difference <= 1:
+            # Group by hour for daily view
+            interval = 'hour'
+        elif days_difference <= 7:
+            # Group by day for weekly view
+            interval = 'day'
+        else:
+            # Group by day for monthly view
+            interval = 'day'
+        
+        logger.info(f"Grouping {data_type} data by {interval} for {days_difference} day(s) range")
+        
+        # Group data
+        grouped_data = []
+        current_group = None
+        current_date = None
+        
+        for entry in data:
+            timestamp = entry.get('timestamp', 0)
+            entry_date = datetime.fromtimestamp(timestamp / 1000)
+            
+            # Get the key for grouping
+            if interval == 'hour':
+                group_key = entry_date.strftime('%Y-%m-%d %H')
+            elif interval == 'day':
+                group_key = entry_date.strftime('%Y-%m-%d')
+            
+            # Start a new group if needed
+            if current_date != group_key:
+                # Save previous group if exists
+                if current_group:
+                    grouped_data.append(current_group)
+                
+                # Initialize new group with timestamp of first entry
+                current_group = {
+                    'timestamp': timestamp,
+                    'entry_count': 0
+                }
+                
+                # Add the appropriate fields based on data type
+                if data_type == 'posture':
+                    current_group['good_posture_percentage'] = 0
+                    current_group['bad_posture_percentage'] = 0
+                elif data_type == 'stress':
+                    current_group['low_stress_percentage'] = 0
+                    current_group['medium_stress_percentage'] = 0
+                    current_group['high_stress_percentage'] = 0
+                elif data_type == 'cvs':
+                    current_group['normal_blink_percentage'] = 0
+                    current_group['low_blink_percentage'] = 0
+                    current_group['high_blink_percentage'] = 0
+                    current_group['avg_blink_count'] = 0
+                elif data_type == 'hydration':
+                    current_group['normal_lips_percentage'] = 0
+                    current_group['dry_lips_percentage'] = 0
+                    current_group['avg_dryness_score'] = 0
+                    
+                current_date = group_key
+            
+            # Update group with current entry
+            current_group['entry_count'] += 1
+            
+            # Sum values based on data type (we'll calculate averages later)
+            if data_type == 'posture':
+                current_group['good_posture_percentage'] += entry.get('good_posture_percentage', 0)
+                current_group['bad_posture_percentage'] += entry.get('bad_posture_percentage', 0)
+            elif data_type == 'stress':
+                current_group['low_stress_percentage'] += entry.get('low_stress_percentage', 0)
+                current_group['medium_stress_percentage'] += entry.get('medium_stress_percentage', 0)
+                current_group['high_stress_percentage'] += entry.get('high_stress_percentage', 0)
+            elif data_type == 'cvs':
+                current_group['normal_blink_percentage'] += entry.get('normal_blink_percentage', 0)
+                current_group['low_blink_percentage'] += entry.get('low_blink_percentage', 0)
+                current_group['high_blink_percentage'] += entry.get('high_blink_percentage', 0)
+                current_group['avg_blink_count'] += entry.get('avg_blink_count', 0)
+            elif data_type == 'hydration':
+                current_group['normal_lips_percentage'] += entry.get('normal_lips_percentage', 0)
+                current_group['dry_lips_percentage'] += entry.get('dry_lips_percentage', 0)
+                current_group['avg_dryness_score'] += entry.get('avg_dryness_score', 0)
+        
+        # Add the last group
+        if current_group:
+            grouped_data.append(current_group)
+        
+        # Calculate averages for each group
+        for group in grouped_data:
+            count = group['entry_count']
+            if count > 0:
+                if data_type == 'posture':
+                    group['good_posture_percentage'] /= count
+                    group['bad_posture_percentage'] /= count
+                elif data_type == 'stress':
+                    group['low_stress_percentage'] /= count
+                    group['medium_stress_percentage'] /= count
+                    group['high_stress_percentage'] /= count
+                elif data_type == 'cvs':
+                    group['normal_blink_percentage'] /= count
+                    group['low_blink_percentage'] /= count
+                    group['high_blink_percentage'] /= count
+                    group['avg_blink_count'] /= count
+                elif data_type == 'hydration':
+                    group['normal_lips_percentage'] /= count
+                    group['dry_lips_percentage'] /= count
+                    group['avg_dryness_score'] /= count
+        
+        logger.info(f"Successfully grouped {data_type} data into {len(grouped_data)} entries")
+        return grouped_data
+    
+    def get_stress_data_range(self, start_date, end_date):
+        """Get stress data for a specific date range."""
+        try:
+            # Convert dates to timestamps (milliseconds)
+            start_timestamp = int(datetime.combine(start_date, datetime.min.time()).timestamp() * 1000)
+            end_timestamp = int(datetime.combine(end_date, datetime.max.time()).timestamp() * 1000)
+            
+            logger.info(f"Fetching stress data from {start_date} to {end_date} (timestamps: {start_timestamp} to {end_timestamp})")
+            
+            if self.db_type == 'firebase':
+                try:
+                    from firebase_admin import db
+                    
+                    # Get data from Firebase ordered by timestamp
+                    stress_ref = self.predictions_ref.child('stress')
+                    logger.info(f"Querying Firebase path: predictions/{self.user_id}/stress")
+                    
+                    # First try to get all data and filter in code (more reliable)
+                    all_results = stress_ref.get()
+                    
+                    # Convert to list of entries
+                    data = []
+                    if all_results:
+                        for key, value in all_results.items():
+                            # Get timestamp for filtering
+                            entry_timestamp = value.get('timestamp', 0)
+                            
+                            # Filter by time range
+                            if entry_timestamp >= start_timestamp and entry_timestamp <= end_timestamp:
+                                # Extract data
+                                entry = {'timestamp': entry_timestamp}
+                                
+                                # Check for different data structures
+                                if 'prediction' in value:
+                                    if 'average' in value['prediction']:
+                                        # From average data
+                                        entry['low_stress_percentage'] = value['prediction']['average'].get('low_stress_percentage', 0)
+                                        entry['medium_stress_percentage'] = value['prediction']['average'].get('medium_stress_percentage', 0)
+                                        entry['high_stress_percentage'] = value['prediction']['average'].get('high_stress_percentage', 0)
+                                        entry['total_samples'] = value['prediction']['average'].get('total_samples', 0)
+                                    elif 'stress_level' in value['prediction']:
+                                        # From direct prediction
+                                        stress_level = value['prediction']['stress_level']
+                                        low = 100 if stress_level == 'Low Stress' else 0
+                                        medium = 100 if stress_level == 'Medium Stress' else 0
+                                        high = 100 if stress_level == 'High Stress' else 0
+                                        
+                                        entry['low_stress_percentage'] = low
+                                        entry['medium_stress_percentage'] = medium
+                                        entry['high_stress_percentage'] = high
+                                        entry['total_samples'] = 1
+                                    else:
+                                        continue
+                                else:
+                                    continue
+                                    
+                                # Add to result list
+                                data.append(entry)
+                    
+                    # Group by timeframe (hourly for daily, daily for weekly, etc.)
+                    # This helps when we have too many data points
+                    grouped_data = self._group_time_series_data(data, start_date, end_date, 'stress')
+                    
+                    logger.info(f"Retrieved {len(data)} raw stress entries, grouped into {len(grouped_data)} entries")
+                    return grouped_data
+                except Exception as e:
+                    logger.error(f"Firebase error fetching stress data: {e}")
+                    return []
+            else:
+                # Return empty array instead of sample data
+                logger.warning(f"Firebase not available. Returning empty stress data for date range {start_date} to {end_date}")
+                return []
+        except Exception as e:
+            logger.error(f"Error retrieving stress data for date range: {e}")
+            return []
+    
+    def get_cvs_data_range(self, start_date, end_date):
+        """Get CVS (eye strain) data for a specific date range."""
+        try:
+            # Convert dates to timestamps (milliseconds)
+            start_timestamp = int(datetime.combine(start_date, datetime.min.time()).timestamp() * 1000)
+            end_timestamp = int(datetime.combine(end_date, datetime.max.time()).timestamp() * 1000)
+            
+            logger.info(f"Fetching CVS data from {start_date} to {end_date} (timestamps: {start_timestamp} to {end_timestamp})")
+            
+            if self.db_type == 'firebase':
+                try:
+                    from firebase_admin import db
+                    
+                    # Get data from Firebase ordered by timestamp
+                    cvs_ref = self.predictions_ref.child('cvs')
+                    logger.info(f"Querying Firebase path: predictions/{self.user_id}/cvs")
+                    
+                    # First try to get all data and filter in code (more reliable)
+                    all_results = cvs_ref.get()
+                    
+                    # Convert to list of entries
+                    data = []
+                    if all_results:
+                        for key, value in all_results.items():
+                            # Get timestamp for filtering
+                            entry_timestamp = value.get('timestamp', 0)
+                            
+                            # Filter by time range
+                            if entry_timestamp >= start_timestamp and entry_timestamp <= end_timestamp:
+                                # Extract data
+                                entry = {'timestamp': entry_timestamp}
+                                
+                                # Check for different data structures
+                                if 'prediction' in value:
+                                    if 'average' in value['prediction']:
+                                        # From average data
+                                        entry['avg_blink_count'] = value['prediction']['average'].get('avg_blink_count', 0)
+                                        entry['normal_blink_percentage'] = value['prediction']['average'].get('normal_blink_percentage', 0)
+                                        entry['low_blink_percentage'] = value['prediction']['average'].get('low_blink_percentage', 0)
+                                        entry['high_blink_percentage'] = value['prediction']['average'].get('high_blink_percentage', 0)
+                                        entry['total_samples'] = value['prediction']['average'].get('total_samples', 0)
+                                    elif 'blink_count' in value['prediction']:
+                                        # From direct prediction
+                                        blink_count = value['prediction']['blink_count']
+                                        # Categorize blink rate
+                                        low_blink = 100 if blink_count < 17 else 0
+                                        normal_blink = 100 if 17 <= blink_count <= 20 else 0 
+                                        high_blink = 100 if blink_count > 20 else 0
+                                        
+                                        entry['avg_blink_count'] = blink_count
+                                        entry['normal_blink_percentage'] = normal_blink
+                                        entry['low_blink_percentage'] = low_blink
+                                        entry['high_blink_percentage'] = high_blink
+                                        entry['total_samples'] = 1
+                                    else:
+                                        continue
+                                else:
+                                    continue
+                                    
+                                # Add to result list
+                                data.append(entry)
+                    
+                    # Group by timeframe (hourly for daily, daily for weekly, etc.)
+                    # This helps when we have too many data points
+                    grouped_data = self._group_time_series_data(data, start_date, end_date, 'cvs')
+                    
+                    logger.info(f"Retrieved {len(data)} raw CVS entries, grouped into {len(grouped_data)} entries")
+                    return grouped_data
+                except Exception as e:
+                    logger.error(f"Firebase error fetching CVS data: {e}")
+                    return []
+            else:
+                # Return empty array instead of sample data
+                logger.warning(f"Firebase not available. Returning empty CVS data for date range {start_date} to {end_date}")
+                return []
+        except Exception as e:
+            logger.error(f"Error retrieving CVS data for date range: {e}")
+            return []
+    
+    def get_hydration_data_range(self, start_date, end_date):
+        """Get hydration data for a specific date range."""
+        try:
+            # Convert dates to timestamps (milliseconds)
+            start_timestamp = int(datetime.combine(start_date, datetime.min.time()).timestamp() * 1000)
+            end_timestamp = int(datetime.combine(end_date, datetime.max.time()).timestamp() * 1000)
+            
+            logger.info(f"Fetching hydration data from {start_date} to {end_date} (timestamps: {start_timestamp} to {end_timestamp})")
+            
+            if self.db_type == 'firebase':
+                try:
+                    from firebase_admin import db
+                    
+                    # Get data from Firebase ordered by timestamp
+                    hydration_ref = self.predictions_ref.child('hydration')
+                    logger.info(f"Querying Firebase path: predictions/{self.user_id}/hydration")
+                    
+                    # First try to get all data and filter in code (more reliable)
+                    all_results = hydration_ref.get()
+                    
+                    # Convert to list of entries
+                    data = []
+                    if all_results:
+                        for key, value in all_results.items():
+                            # Get timestamp for filtering
+                            entry_timestamp = value.get('timestamp', 0)
+                            
+                            # Filter by time range
+                            if entry_timestamp >= start_timestamp and entry_timestamp <= end_timestamp:
+                                # Extract data
+                                entry = {'timestamp': entry_timestamp}
+                                
+                                # Check for different data structures
+                                if 'prediction' in value:
+                                    if 'average' in value['prediction']:
+                                        # From average data
+                                        entry['normal_lips_percentage'] = value['prediction']['average'].get('normal_lips_percentage', 0)
+                                        entry['dry_lips_percentage'] = value['prediction']['average'].get('dry_lips_percentage', 0)
+                                        entry['avg_dryness_score'] = value['prediction']['average'].get('avg_dryness_score', 0)
+                                        entry['total_samples'] = value['prediction']['average'].get('total_samples', 0)
+                                    elif 'hydration_status' in value['prediction']:
+                                        # From direct prediction
+                                        hydration_status = value['prediction']['hydration_status']
+                                        normal = 100 if hydration_status == 'Normal Lips' else 0
+                                        dry = 100 if hydration_status == 'Dry Lips' else 0
+                                        dryness_score = value['prediction'].get('dryness_score', 0.5)
+                                        
+                                        entry['normal_lips_percentage'] = normal
+                                        entry['dry_lips_percentage'] = dry
+                                        entry['avg_dryness_score'] = dryness_score
+                                        entry['total_samples'] = 1
+                                    else:
+                                        continue
+                                else:
+                                    continue
+                                    
+                                # Add to result list
+                                data.append(entry)
+                    
+                    # Group by timeframe (hourly for daily, daily for weekly, etc.)
+                    # This helps when we have too many data points
+                    grouped_data = self._group_time_series_data(data, start_date, end_date, 'hydration')
+                    
+                    logger.info(f"Retrieved {len(data)} raw hydration entries, grouped into {len(grouped_data)} entries")
+                    return grouped_data
+                except Exception as e:
+                    logger.error(f"Firebase error fetching hydration data: {e}")
+                    return []
+            else:
+                # Return empty array instead of sample data
+                logger.warning(f"Firebase not available. Returning empty hydration data for date range {start_date} to {end_date}")
+                return []
+        except Exception as e:
+            logger.error(f"Error retrieving hydration data for date range: {e}")
+            return []
+    
+    # Sample data generators for testing
+    def _generate_sample_posture_data(self, start_date, end_date):
+        """Generate sample posture data for testing."""
+        import random
+        import numpy as np
+        
+        data = []
+        current_date = start_date
+        
+        while current_date <= end_date:
+            # Generate entries for each hour of the day
+            for hour in range(8, 18):  # 8 AM to 6 PM
+                timestamp = int(datetime.combine(current_date, datetime.min.time().replace(hour=hour)).timestamp() * 1000)
+                
+                # Generate random percentages with a tendency to improve over time
+                good_percentage = max(50, min(95, random.gauss(70, 10) + (hour - 8) * 1.5))
+                bad_percentage = 100 - good_percentage
+                
+                entry = {
+                    'timestamp': timestamp,
+                    'good_posture_percentage': good_percentage,
+                    'bad_posture_percentage': bad_percentage,
+                    'total_samples': random.randint(30, 60)
+                }
+                data.append(entry)
+            
+            # Move to next day
+            current_date += datetime.timedelta(days=1)
+        
+        return data
+    
+    def _generate_sample_stress_data(self, start_date, end_date):
+        """Generate sample stress data for testing."""
+        import random
+        
+        data = []
+        current_date = start_date
+        
+        while current_date <= end_date:
+            # Generate entries for each hour of the day
+            for hour in range(8, 18):  # 8 AM to 6 PM
+                timestamp = int(datetime.combine(current_date, datetime.min.time().replace(hour=hour)).timestamp() * 1000)
+                
+                # Stress tends to increase during the day
+                low_stress = max(10, min(80, random.gauss(70, 15) - (hour - 8) * 3))
+                high_stress = max(5, min(60, random.gauss(10, 5) + (hour - 8) * 2))
+                
+                # Adjust to ensure percentages add up to 100%
+                if low_stress + high_stress > 100:
+                    factor = 100 / (low_stress + high_stress)
+                    low_stress *= factor
+                    high_stress *= factor
+                
+                medium_stress = 100 - low_stress - high_stress
+                
+                entry = {
+                    'timestamp': timestamp,
+                    'low_stress_percentage': low_stress,
+                    'medium_stress_percentage': medium_stress,
+                    'high_stress_percentage': high_stress,
+                    'total_samples': random.randint(30, 60)
+                }
+                data.append(entry)
+            
+            # Move to next day
+            current_date += datetime.timedelta(days=1)
+        
+        return data
+    
+    def _generate_sample_cvs_data(self, start_date, end_date):
+        """Generate sample CVS data for testing."""
+        import random
+        
+        data = []
+        current_date = start_date
+        
+        while current_date <= end_date:
+            # Generate entries for each hour of the day
+            for hour in range(8, 18):  # 8 AM to 6 PM
+                timestamp = int(datetime.combine(current_date, datetime.min.time().replace(hour=hour)).timestamp() * 1000)
+                
+                # Blink patterns tend to worsen during the day
+                normal_blink = max(20, min(90, random.gauss(70, 15) - (hour - 8) * 2))
+                low_blink = max(5, min(60, random.gauss(15, 10) + (hour - 8) * 1.5))
+                
+                # Adjust to ensure percentages add up to 100%
+                if normal_blink + low_blink > 100:
+                    factor = 100 / (normal_blink + low_blink)
+                    normal_blink *= factor
+                    low_blink *= factor
+                
+                high_blink = 100 - normal_blink - low_blink
+                
+                # Blink count decreases as eye fatigue increases
+                avg_blink_count = max(10, min(25, random.gauss(18, 3) - (hour - 8) * 0.5))
+                
+                entry = {
+                    'timestamp': timestamp,
+                    'avg_blink_count': avg_blink_count,
+                    'normal_blink_percentage': normal_blink,
+                    'low_blink_percentage': low_blink,
+                    'high_blink_percentage': high_blink,
+                    'total_samples': random.randint(30, 60)
+                }
+                data.append(entry)
+            
+            # Move to next day
+            current_date += datetime.timedelta(days=1)
+        
+        return data
+    
+    def _generate_sample_hydration_data(self, start_date, end_date):
+        """Generate sample hydration data for testing."""
+        import random
+        
+        data = []
+        current_date = start_date
+        
+        while current_date <= end_date:
+            # Generate entries for each hour of the day
+            for hour in range(8, 18):  # 8 AM to 6 PM
+                timestamp = int(datetime.combine(current_date, datetime.min.time().replace(hour=hour)).timestamp() * 1000)
+                
+                # Hydration tends to decrease during the day
+                normal_lips = max(40, min(95, random.gauss(80, 10) - (hour - 8) * 2))
+                dry_lips = 100 - normal_lips
+                
+                # Dryness score (0-1 scale)
+                avg_dryness_score = max(0.1, min(0.9, random.gauss(0.3, 0.1) + (hour - 8) * 0.02))
+                
+                entry = {
+                    'timestamp': timestamp,
+                    'normal_lips_percentage': normal_lips,
+                    'dry_lips_percentage': dry_lips,
+                    'avg_dryness_score': avg_dryness_score,
+                    'total_samples': random.randint(30, 60)
+                }
+                data.append(entry)
+            
+            # Move to next day
+            current_date += datetime.timedelta(days=1)
+        
+        return data

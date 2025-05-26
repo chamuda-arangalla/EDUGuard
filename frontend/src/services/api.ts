@@ -52,7 +52,8 @@ api.interceptors.request.use(
       // Hydration monitoring endpoints need more time
       if (config.url.includes('/hydration/start') || 
           config.url.includes('/hydration/stop') ||
-          config.url.includes('/webcam/start')) {
+          config.url.includes('/webcam/start') ||
+          config.url.includes('/reports/')) {
         console.log(`Applying extended timeout (${EXTENDED_TIMEOUT}ms) for: ${config.url}`);
         config.timeout = EXTENDED_TIMEOUT;
       }
@@ -723,6 +724,161 @@ export const hydrationService = {
       return { 
         status: 'error', 
         message: error.response?.data?.message || 'Could not trigger alert check.' 
+      };
+    }
+  }
+};
+
+// -----------------------------------------------------------------------------
+// Reports Services
+// -----------------------------------------------------------------------------
+export const reportsService = {
+  // Get historical posture data with filtering
+  getPostureHistory: async (timeframe: 'daily' | 'weekly' | 'monthly', date?: string) => {
+    try {
+      const userId = localStorage.getItem('userId');
+      if (!userId) {
+        console.error('No user ID found in local storage for posture history request');
+        return {
+          status: 'error',
+          message: 'User ID is required to fetch data',
+          data: null
+        };
+      }
+      
+      const params = date ? `&date=${date}` : '';
+      const url = `/reports/posture?timeframe=${timeframe}${params}&userId=${userId}`;
+      console.log(`Fetching posture history: ${url}`);
+      
+      // Use extended timeout for report endpoints
+      const response = await api.get(url, { timeout: 60000 });
+      return response.data;
+    } catch (error: any) {
+      console.error('Get posture history error:', error.response?.data || error.message);
+      return {
+        status: 'error',
+        message: 'Failed to load posture history data',
+        data: null
+      };
+    }
+  },
+  
+  // Get historical stress data with filtering
+  getStressHistory: async (timeframe: 'daily' | 'weekly' | 'monthly', date?: string) => {
+    try {
+      const userId = localStorage.getItem('userId');
+      if (!userId) {
+        console.error('No user ID found in local storage for stress history request');
+        return {
+          status: 'error',
+          message: 'User ID is required to fetch data',
+          data: null
+        };
+      }
+      
+      const params = date ? `&date=${date}` : '';
+      const url = `/reports/stress?timeframe=${timeframe}${params}&userId=${userId}`;
+      console.log(`Fetching stress history: ${url}`);
+      
+      // Use extended timeout for report endpoints
+      const response = await api.get(url, { timeout: 60000 });
+      return response.data;
+    } catch (error: any) {
+      console.error('Get stress history error:', error.response?.data || error.message);
+      return {
+        status: 'error',
+        message: 'Failed to load stress history data',
+        data: null
+      };
+    }
+  },
+  
+  // Get historical CVS (eye strain) data with filtering
+  getCVSHistory: async (timeframe: 'daily' | 'weekly' | 'monthly', date?: string) => {
+    try {
+      const userId = localStorage.getItem('userId');
+      if (!userId) {
+        console.error('No user ID found in local storage for CVS history request');
+        return {
+          status: 'error',
+          message: 'User ID is required to fetch data',
+          data: null
+        };
+      }
+      
+      const params = date ? `&date=${date}` : '';
+      const url = `/reports/cvs?timeframe=${timeframe}${params}&userId=${userId}`;
+      console.log(`Fetching CVS history: ${url}`);
+      
+      // Use extended timeout for report endpoints
+      const response = await api.get(url, { timeout: 60000 });
+      return response.data;
+    } catch (error: any) {
+      console.error('Get CVS history error:', error.response?.data || error.message);
+      return {
+        status: 'error',
+        message: 'Failed to load eye strain history data',
+        data: null
+      };
+    }
+  },
+  
+  // Get historical hydration data with filtering
+  getHydrationHistory: async (timeframe: 'daily' | 'weekly' | 'monthly', date?: string) => {
+    try {
+      const userId = localStorage.getItem('userId');
+      if (!userId) {
+        console.error('No user ID found in local storage for hydration history request');
+        return {
+          status: 'error',
+          message: 'User ID is required to fetch data',
+          data: null
+        };
+      }
+      
+      const params = date ? `&date=${date}` : '';
+      const url = `/reports/hydration?timeframe=${timeframe}${params}&userId=${userId}`;
+      console.log(`Fetching hydration history: ${url}`);
+      
+      // Use extended timeout for report endpoints
+      const response = await api.get(url, { timeout: 60000 });
+      return response.data;
+    } catch (error: any) {
+      console.error('Get hydration history error:', error.response?.data || error.message);
+      return {
+        status: 'error',
+        message: 'Failed to load hydration history data',
+        data: null
+      };
+    }
+  },
+  
+  // Get summary data across all monitoring types
+  getSummaryData: async (timeframe: 'daily' | 'weekly' | 'monthly') => {
+    try {
+      const userId = localStorage.getItem('userId');
+      if (!userId) {
+        console.error('No user ID found in local storage for summary data request');
+        return {
+          status: 'error',
+          message: 'User ID is required to fetch data',
+          data: null
+        };
+      }
+      
+      const url = `/reports/summary?timeframe=${timeframe}&userId=${userId}`;
+      console.log(`Fetching summary data: ${url}`);
+      
+      // Use extended timeout for report endpoints
+      const response = await api.get(url, { timeout: 60000 });
+      return response.data;
+    } catch (error: any) {
+      console.error('Get summary data error:', error);
+      console.log('Request details:', error.config);
+      return {
+        status: 'error',
+        message: 'Failed to load summary data',
+        data: null
       };
     }
   }

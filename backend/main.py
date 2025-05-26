@@ -24,6 +24,7 @@ from posture_api import posture_bp, monitoring_manager as posture_monitoring
 from stress_api import stress_bp, monitoring_manager as stress_monitoring
 from cvs_api import cvs_bp, monitoring_manager as cvs_monitoring
 from hydration_api import hydration_bp, monitoring_manager as hydration_monitoring
+from reports_api import reports_bp
 
 # Import utilities
 from utils.database import DatabaseManager
@@ -81,14 +82,27 @@ def create_app(test_config=None):
     # Initialize Flask application
     app = Flask(__name__)
     
-    # Enable CORS for all routes and origins
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    # Enable CORS for all routes and origins with more explicit configuration
+    CORS(app, 
+         resources={r"/api/*": {"origins": "*"}},
+         allow_headers=["Content-Type", "Authorization", "X-User-ID", "X-User-Id", "x-user-id"],
+         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+         supports_credentials=True)
+    
+    # Additional CORS handling for preflight requests
+    @app.after_request
+    def after_request(response):
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-User-ID,X-User-Id,x-user-id')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        return response
     
     # Register API blueprints
     app.register_blueprint(posture_bp)
     app.register_blueprint(stress_bp)
     app.register_blueprint(cvs_bp)
     app.register_blueprint(hydration_bp)
+    app.register_blueprint(reports_bp)
     
     # Import routes from app.py
     from app import register_app_routes

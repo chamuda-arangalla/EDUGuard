@@ -23,6 +23,7 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.0",
     "react-webcam": "^7.2.0",
+    "recharts": "^2.15.3",
     "zustand": "^4.5.0"
   },
   "devDependencies": {
@@ -55,15 +56,21 @@
       "dist-electron/**/*"
     ],
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "category": "public.app-category.education"
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "public/logo.png"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Education"
     }
   }
