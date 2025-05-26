@@ -4,19 +4,133 @@
   font-weight: 400;
 
   color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  color: rgba(0, 0, 0, 0.87);
+  background-color: #ffffff;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+
+  /* Define consistent spacing variables */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
 }
 
 body {
   margin: 0;
+  padding: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow: hidden;
+}
+
+#root {
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Ensure proper stacking context for all components */
+.MuiDrawer-root {
+  z-index: 1200;
+}
+
+.MuiAppBar-root {
+  z-index: 1300;
+}
+
+/* Fix for tab content not being hidden by sidebar */
+.MuiTabs-root {
+  position: relative;
+  z-index: 1;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.MuiTab-root {
+  position: relative;
+  z-index: 1;
+  padding: 6px 12px !important;
+  min-width: auto !important;
+  margin: 0 !important;
+}
+
+/* Remove any gap between drawer and content */
+.MuiDrawer-paper {
+  border-right: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow: none !important;
+}
+
+/* Remove any margins or padding from sidebar buttons */
+.MuiDrawer-paper .MuiListItemButton-root {
+  margin-right: 0 !important;
+  border-radius: 0 !important;
+  width: 100% !important;
+}
+
+/* Ensure proper content scrolling and no animations for tab panels */
+.MuiBox-root[role="tabpanel"] {
+  height: 100%;
+  overflow: auto;
+  margin: 0 !important;
+  padding: 8px !important;
+  transition: none !important;
+}
+
+/* Disable animations for tab transitions */
+.MuiTabs-indicator {
+  transition: none !important;
+}
+
+.MuiTab-root .MuiTouchRipple-root {
+  display: none !important;
+}
+
+/* Fix for any potential margin/padding issues */
+.MuiContainer-root {
+  padding-left: 0;
+  margin-left: 0;
+}
+
+/* Consistent card and paper styling */
+.MuiPaper-root {
+  padding: 12px !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
+}
+
+.MuiCardContent-root {
+  padding: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+/* Better grid alignment */
+.MuiGrid-root {
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+/* Fix button alignment in cards */
+.MuiCardActions-root {
+  padding: 8px 12px !important;
+}
+
+/* Consistent typography */
+.MuiTypography-root {
+  margin-bottom: 0 !important;
+}
+
+.MuiTypography-gutterBottom {
+  margin-bottom: 8px !important;
+}
+
+/* Better form controls */
+.MuiFormControl-root {
+  margin-bottom: 16px !important;
 }
 
 @media (prefers-color-scheme: light) {

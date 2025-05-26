@@ -24,7 +24,7 @@ import LockIcon from '@mui/icons-material/Lock';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import Logo from './Logo';
+import Logo from '../assets/logo.png';
 
 interface LocationState {
   registrationSuccess?: boolean;
@@ -286,7 +286,7 @@ const Login: React.FC = () => {
             <Typography variant="h6" sx={{ color: 'rgba(255, 255, 255, 0.9)', mb: 3 }}>
               The ultimate desktop application for student focus monitoring
             </Typography>
-            <Logo size={100} />
+            <img src={Logo} alt="Logo" style={{ width: '100%', height: 'auto' }} />
             <Typography variant="body1" sx={{ color: 'rgba(255, 255, 255, 0.8)', mt: 3 }}>
               EDUGuard helps students maintain focus during study sessions using advanced machine learning techniques.
             </Typography>

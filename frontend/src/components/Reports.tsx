@@ -23,8 +23,8 @@ const Reports: React.FC = () => {
 
   return (
     <Layout title="Reports">
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h5" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
           <TimelineIcon color="primary" /> Performance Reports
         </Typography>
         <Typography variant="body1" color="text.secondary">
@@ -32,12 +32,12 @@ const Reports: React.FC = () => {
         </Typography>
       </Box>
 
-      <Grid container spacing={3}>
+      <Grid container spacing={4}>
         {/* Weekly Focus Rate */}
         <Grid item xs={12} md={8}>
-          <Paper sx={{ p: 3, height: '100%' }}>
+          <Paper sx={{ p: 4, height: '100%' }}>
             <Typography variant="h6" gutterBottom>Weekly Focus Rate</Typography>
-            <Divider sx={{ mb: 3 }}/>
+            <Divider sx={{ mb: 4 }}/>
             
             {/* This would be replaced with an actual chart component */}
             <Box sx={{ 
@@ -54,12 +54,12 @@ const Reports: React.FC = () => {
               </Typography>
             </Box>
             
-            <Box sx={{ mt: 2 }}>
+            <Box sx={{ mt: 3 }}>
               <Grid container spacing={2}>
                 {mockData.weeklyStats.map((day) => (
                   <Grid item xs={12} md={2.4} key={day.day}>
-                    <Card variant="outlined" sx={{ textAlign: 'center', py: 1 }}>
-                      <Typography variant="body2" color="text.secondary">{day.day}</Typography>
+                    <Card variant="outlined" sx={{ textAlign: 'center', py: 2 }}>
+                      <Typography variant="body2" color="text.secondary" gutterBottom>{day.day}</Typography>
                       <Typography variant="h6" sx={{ color: 'primary.main', fontWeight: 'bold' }}>
                         {day.focusRate}%
                       </Typography>
@@ -76,22 +76,22 @@ const Reports: React.FC = () => {
 
         {/* Distraction Analysis */}
         <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 3, height: '100%' }}>
+          <Paper sx={{ p: 4, height: '100%' }}>
             <Typography variant="h6" gutterBottom>Distraction Analysis</Typography>
-            <Divider sx={{ mb: 3 }}/>
+            <Divider sx={{ mb: 4 }}/>
             
             {/* Simple list of distractions */}
             {mockData.distractions.map((item, index) => (
               <Box 
                 key={item.type}
                 sx={{ 
-                  mb: 2, 
+                  mb: 3, 
                   pb: 2,
                   borderBottom: index !== mockData.distractions.length - 1 ? '1px solid' : 'none',
                   borderColor: 'divider'
                 }}
               >
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                   <Typography variant="body2">{item.type}</Typography>
                   <Typography variant="body2" fontWeight="medium">{item.count} times</Typography>
                 </Box>
@@ -124,31 +124,31 @@ const Reports: React.FC = () => {
 
         {/* Monthly Summary */}
         <Grid item xs={12}>
-          <Paper sx={{ p: 3 }}>
+          <Paper sx={{ p: 4 }}>
             <Typography variant="h6" gutterBottom>Monthly Summary</Typography>
-            <Divider sx={{ mb: 3 }}/>
+            <Divider sx={{ mb: 4 }}/>
             
             <Grid container spacing={3}>
               <Grid item xs={12} md={3}>
-                <Card sx={{ textAlign: 'center', py: 2 }}>
+                <Card sx={{ textAlign: 'center', py: 3 }}>
                   <Typography variant="h3" sx={{ fontWeight: 'bold', color: 'primary.main' }}>82%</Typography>
                   <Typography variant="body2" color="text.secondary">Average Focus Rate</Typography>
                 </Card>
               </Grid>
               <Grid item xs={12} md={3}>
-                <Card sx={{ textAlign: 'center', py: 2 }}>
+                <Card sx={{ textAlign: 'center', py: 3 }}>
                   <Typography variant="h3" sx={{ fontWeight: 'bold', color: 'primary.main' }}>68h</Typography>
                   <Typography variant="body2" color="text.secondary">Total Study Time</Typography>
                 </Card>
               </Grid>
               <Grid item xs={12} md={3}>
-                <Card sx={{ textAlign: 'center', py: 2 }}>
+                <Card sx={{ textAlign: 'center', py: 3 }}>
                   <Typography variant="h3" sx={{ fontWeight: 'bold', color: 'primary.main' }}>12</Typography>
                   <Typography variant="body2" color="text.secondary">Study Sessions</Typography>
                 </Card>
               </Grid>
               <Grid item xs={12} md={3}>
-                <Card sx={{ textAlign: 'center', py: 2 }}>
+                <Card sx={{ textAlign: 'center', py: 3 }}>
                   <Typography variant="h3" sx={{ fontWeight: 'bold', color: 'primary.main' }}>24</Typography>
                   <Typography variant="body2" color="text.secondary">Distractions</Typography>
                 </Card>

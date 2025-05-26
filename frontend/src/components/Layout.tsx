@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Toolbar, AppBar, IconButton, Typography, Container, useTheme, useMediaQuery } from '@mui/material';
+import { Box, Toolbar, AppBar, IconButton, Typography, useTheme, useMediaQuery } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import SideNavigation from './SideNavigation';
 
@@ -32,7 +32,12 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   const sidebarWidth = isTablet ? drawerCollapsedWidth : drawerExpandedWidth;
 
   return (
-    <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+    <Box sx={{ 
+      display: 'flex', 
+      height: '100vh', 
+      overflow: 'hidden',
+      bgcolor: 'background.default',
+    }}>
       {/* Sidebar navigation */}
       <SideNavigation 
         mobileOpen={mobileOpen} 
@@ -44,20 +49,19 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
         component="main"
         sx={{
           flexGrow: 1,
-          width: { 
-            xs: '100%',
-            sm: `calc(100% - ${drawerCollapsedWidth}px)`,
-            md: `calc(100% - ${sidebarWidth}px)`
-          },
+          width: '100%',
           height: '100vh',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          bgcolor: 'background.default',
-          transition: theme => theme.transitions.create(['width', 'margin'], {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.enteringScreen,
-          }),
+          ml: { 
+            xs: 0,
+            sm: `${drawerCollapsedWidth}px`,
+            md: `${drawerExpandedWidth}px`
+          },
+          transition: 'none',
+          position: 'relative',
+          zIndex: 1,
         }}
       >
         {/* Mobile app bar */}
@@ -66,15 +70,16 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
           elevation={0}
           sx={{
             display: { xs: 'flex', sm: 'none' },
-            width: { sm: `calc(100% - ${drawerCollapsedWidth}px)` },
-            ml: { sm: `${drawerCollapsedWidth}px` },
+            width: { xs: '100%', sm: `calc(100% - ${drawerCollapsedWidth}px)` },
+            ml: { xs: 0, sm: `${drawerCollapsedWidth}px` },
             bgcolor: 'background.paper',
             color: 'text.primary',
             borderBottom: '1px solid',
             borderColor: 'divider',
+            zIndex: theme.zIndex.drawer + 1,
           }}
         >
-          <Toolbar>
+          <Toolbar sx={{ px: 2 }}>
             <IconButton
               color="inherit"
               aria-label="open drawer"
@@ -98,9 +103,11 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
         {/* Page content with scrolling */}
         <Box sx={{ 
           flexGrow: 1, 
-          p: { xs: 2, sm: 3, md: 4 }, 
-          overflow: 'auto', // Enable scrolling for content
-          width: '100%'
+          p: { xs: 1.5, sm: 2, md: 2.5 },
+          overflow: 'auto',
+          width: '100%',
+          height: '100%',
+          boxSizing: 'border-box',
         }}>
           {children}
         </Box>

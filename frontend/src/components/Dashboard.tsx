@@ -110,7 +110,7 @@ const Dashboard: React.FC = () => {
   return (
     <Layout title="Dashboard">
       {alert && (
-        <Alert severity="warning" sx={{ mb: 3 }} onClose={() => setAlert(null)}>
+        <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setAlert(null)}>
           {alert}
         </Alert>
       )}
@@ -118,65 +118,64 @@ const Dashboard: React.FC = () => {
       <Grid container spacing={isMobile ? 2 : 3}>
         {/* Welcome card with user profile */}
         <Grid item xs={12}>
-          <Paper sx={{ p: { xs: 2, sm: 3 }, borderRadius: 2, mb: isMobile ? 1 : 2 }}>
-            <Box sx={{ 
-              display: 'flex', 
-              flexDirection: isMobile ? 'column' : 'row',
-              justifyContent: 'space-between', 
-              alignItems: isMobile ? 'flex-start' : 'center',
-              gap: isMobile ? 2 : 0
-            }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                {profileLoading ? (
-                  <CircularProgress size={40} />
-                ) : (
-                  <Avatar sx={{ bgcolor: 'primary.main', width: 48, height: 48 }}>
-                    {userInitials}
-                  </Avatar>
+          <Paper sx={{ 
+            p: { xs: 2, sm: 3 }, 
+            mb: 3,
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            justifyContent: 'space-between', 
+            alignItems: isMobile ? 'flex-start' : 'center',
+            gap: isMobile ? 2 : 1
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              {profileLoading ? (
+                <CircularProgress size={40} />
+              ) : (
+                <Avatar sx={{ bgcolor: 'primary.main', width: 48, height: 48 }}>
+                  {userInitials}
+                </Avatar>
+              )}
+              <Box>
+                <Typography variant="h5" gutterBottom sx={{ mb: 0.5 }}>
+                  Welcome back, {displayName}!
+                </Typography>
+                <Typography variant="body1" color="text.secondary">
+                  {userProfile?.email || user?.email || 'Loading profile...'}
+                </Typography>
+                {userProfile?.lastLogin && (
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                    Last login: {new Date(userProfile.lastLogin).toLocaleString()}
+                  </Typography>
                 )}
-                <Box>
-                  <Typography variant="h5" gutterBottom>
-                    Welcome back, {displayName}!
-                  </Typography>
-                  <Typography variant="body1" color="text.secondary">
-                    {userProfile?.email || user?.email || 'Loading profile...'}
-                  </Typography>
-                  {userProfile?.lastLogin && (
-                    <Typography variant="caption" color="text.secondary">
-                      Last login: {new Date(userProfile.lastLogin).toLocaleString()}
-                    </Typography>
-                  )}
-                </Box>
               </Box>
-              <Button
-                variant="contained"
-                color={isMonitoring ? "error" : "primary"}
-                startIcon={isMonitoring ? <StopIcon /> : <PlayArrowIcon />}
-                onClick={isMonitoring ? stopMonitoring : startMonitoring}
-                size={isMobile ? "medium" : "large"}
-                fullWidth={isMobile}
-                sx={{ px: 3, py: 1 }}
-              >
-                {isMonitoring ? "Stop Monitoring" : showCamera ? "Start Monitoring" : "Activate Camera"}
-              </Button>
             </Box>
+            <Button
+              variant="contained"
+              color={isMonitoring ? "error" : "primary"}
+              startIcon={isMonitoring ? <StopIcon /> : <PlayArrowIcon />}
+              onClick={isMonitoring ? stopMonitoring : startMonitoring}
+              size={isMobile ? "medium" : "large"}
+              sx={{ minWidth: 160 }}
+            >
+              {isMonitoring ? "Stop Monitoring" : showCamera ? "Start Monitoring" : "Activate Camera"}
+            </Button>
           </Paper>
         </Grid>
 
         {/* Profile card */}
-        <Grid item xs={12} md={4} sm={6}>
-          <Paper sx={{ p: { xs: 2, sm: 3 }, height: '100%' }}>
+        <Grid item xs={12} md={4}>
+          <Paper sx={{ height: '100%', p: { xs: 2, sm: 3 } }}>
             <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
               <PersonIcon color="primary" /> Profile
             </Typography>
             {profileLoading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
                 <CircularProgress />
               </Box>
             ) : (
-              <Box>
+              <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                 <Box sx={{ mb: 2 }}>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
                     Display Name
                   </Typography>
                   <Typography variant="body1" fontWeight="medium" sx={{ wordBreak: "break-word" }}>
@@ -184,7 +183,7 @@ const Dashboard: React.FC = () => {
                   </Typography>
                 </Box>
                 <Box sx={{ mb: 2 }}>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
                     Email
                   </Typography>
                   <Typography variant="body1" sx={{ wordBreak: "break-all" }}>
@@ -193,7 +192,7 @@ const Dashboard: React.FC = () => {
                 </Box>
                 {userProfile?.createdAt && (
                   <Box sx={{ mb: 2 }}>
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
                       Account Created
                     </Typography>
                     <Typography variant="body1">
@@ -201,30 +200,30 @@ const Dashboard: React.FC = () => {
                     </Typography>
                   </Box>
                 )}
-                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                <Box sx={{ mt: 'auto', pt: 2 }}>
                   <Button 
                     variant="outlined" 
                     size="small" 
                     onClick={handleProfileRefresh}
-                    fullWidth={isMobile}
+                    fullWidth
                   >
                     Refresh Profile
                   </Button>
-                </Stack>
+                </Box>
               </Box>
             )}
           </Paper>
         </Grid>
 
         {/* Script Runner Section */}
-        <Grid item xs={12} md={8} sm={6}>
+        <Grid item xs={12} md={8}>
           <ScriptRunner />
         </Grid>
 
         {/* Camera view */}
         {showCamera && (
           <Grid item xs={12} md={8}>
-            <Paper sx={{ p: { xs: 2, sm: 3 }, height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <Paper sx={{ p: { xs: 2, sm: 3 }, height: '100%' }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <VideocamIcon color="primary" /> Camera Feed
@@ -304,7 +303,7 @@ const Dashboard: React.FC = () => {
                 <Button 
                   variant="outlined" 
                   startIcon={<TimelineIcon />}
-                  fullWidth={isMobile}
+                  fullWidth
                 >
                   View Detailed Analysis
                 </Button>

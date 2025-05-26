@@ -25,7 +25,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import Logo from './Logo';
+import Logo from '../assets/logo.png';
 
 const Register: React.FC = () => {
   const [displayName, setDisplayName] = useState('');
@@ -138,7 +138,7 @@ const Register: React.FC = () => {
             <Typography variant="h6" sx={{ color: 'rgba(255, 255, 255, 0.9)', mb: 3 }}>
               Create your account to start monitoring your focus
             </Typography>
-            <Logo size={100} />
+            <img src={Logo} alt="Logo" style={{ width: '100%', height: 'auto' }} />
             <Typography variant="body1" sx={{ color: 'rgba(255, 255, 255, 0.8)', mt: 3 }}>
               EDUGuard helps students maintain focus during study sessions using advanced machine learning techniques.
             </Typography>

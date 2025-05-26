@@ -1105,18 +1105,30 @@ const ScriptRunner: React.FC = () => {
   // Component Render
   // -----------------------------------------------------------------------------
   return (
-    <Box sx={{ width: '100%', p: 2 }}>
+    <Box sx={{ 
+      width: '100%',
+      m: 0,
+      p: 0
+    }}>
       {/* Webcam Server Control */}
-      <Paper sx={{ p: 2, mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-    <Box>
-          <Typography variant="h6" gutterBottom>
+      <Paper sx={{ 
+        p: { xs: 2, sm: 3 }, 
+        mb: 3, 
+        display: 'flex', 
+        flexDirection: { xs: 'column', sm: 'row' },
+        justifyContent: 'space-between', 
+        alignItems: { xs: 'flex-start', sm: 'center' },
+        gap: 2
+      }}>
+        <Box>
+          <Typography variant="h6" gutterBottom sx={{ mb: 0.5 }}>
             Webcam Server
-        </Typography>
+          </Typography>
           <Typography variant="body2" color="text.secondary">
             {webcamServerActive 
               ? 'Webcam server is running and ready for monitoring tools' 
               : 'Start the webcam server to use monitoring tools'}
-        </Typography>
+          </Typography>
         </Box>
         <Button
           variant="contained"
@@ -1124,6 +1136,10 @@ const ScriptRunner: React.FC = () => {
           startIcon={webcamServerActive ? <StopIcon /> : <PlayArrowIcon />}
           onClick={webcamServerActive ? stopWebcamServer : startWebcamServer}
           disabled={webcamLoading}
+          sx={{ 
+            minWidth: 120,
+            alignSelf: { xs: 'stretch', sm: 'auto' }
+          }}
         >
           {webcamLoading ? (
             <CircularProgress size={24} color="inherit" />
@@ -1134,71 +1150,79 @@ const ScriptRunner: React.FC = () => {
       </Paper>
 
       {/* Monitoring Tools */}
-      <Typography variant="h5" gutterBottom sx={{ mt: 4, mb: 2 }}>
+      <Typography variant="h5" gutterBottom sx={{ mt: 3, mb: 2 }}>
         Health Monitoring Tools
       </Typography>
       
-      <Grid container spacing={3}>
-          {scripts.map((script) => (
+      <Grid container spacing={2}>
+        {scripts.map((script) => (
           <Grid item xs={12} sm={6} md={6} lg={3} key={script.id}>
             <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-              <CardContent sx={{ flexGrow: 1 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Box sx={{ mr: 1, color: `${script.color}.main` }}>
-                      {script.icon}
+              <CardContent sx={{ 
+                flexGrow: 1, 
+                display: 'flex', 
+                flexDirection: 'column', 
+                justifyContent: 'space-between',
+                p: 2
+              }}>
+                <Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <Box sx={{ mr: 1, color: `${script.color}.main` }}>
+                        {script.icon}
+                      </Box>
+                      <Typography variant="h6" component="div" fontSize="1rem">
+                        {script.name}
+                      </Typography>
                     </Box>
-                    <Typography variant="h6" component="div">
-                      {script.name}
-                    </Typography>
+                    
+                    {/* Status indicator */}
+                    {script.id === 1 && postureMonitoring && (
+                      <Chip 
+                        size="small" 
+                        color={getPostureStatusColor() as any} 
+                        label="Active" 
+                      />
+                    )}
+                    {script.id === 2 && stressMonitoring && (
+                      <Chip 
+                        size="small" 
+                        color={getStressStatusColor() as any} 
+                        label="Active" 
+                      />
+                    )}
+                    {script.id === 3 && cvsMonitoring && (
+                      <Chip 
+                        size="small" 
+                        color={getCVSStatusColor() as any} 
+                        label="Active" 
+                      />
+                    )}
+                    {script.id === 4 && hydrationMonitoring && (
+                      <Chip 
+                        size="small" 
+                        color={getHydrationStatusColor() as any} 
+                        label="Active" 
+                      />
+                    )}
                   </Box>
                   
-                  {/* Status indicator */}
-                  {script.id === 1 && postureMonitoring && (
-                    <Chip 
-                      size="small" 
-                      color={getPostureStatusColor() as any} 
-                      label="Active" 
-                    />
-                  )}
-                  {script.id === 2 && stressMonitoring && (
-                    <Chip 
-                      size="small" 
-                      color={getStressStatusColor() as any} 
-                      label="Active" 
-                    />
-                  )}
-                  {script.id === 3 && cvsMonitoring && (
-                    <Chip 
-                      size="small" 
-                      color={getCVSStatusColor() as any} 
-                      label="Active" 
-                    />
-                  )}
-                  {script.id === 4 && hydrationMonitoring && (
-                    <Chip 
-                      size="small" 
-                      color={getHydrationStatusColor() as any} 
-                      label="Active" 
-                    />
-                  )}
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                    {script.description}
+                  </Typography>
                 </Box>
                 
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  {script.description}
-                </Typography>
-                
-              <Button
+                <Button
                   variant="contained"
                   color={
-                  (script.id === 1 && postureMonitoring) || 
+                    (script.id === 1 && postureMonitoring) || 
                     (script.id === 2 && stressMonitoring) ||
                     (script.id === 3 && cvsMonitoring) ||
                     (script.id === 4 && hydrationMonitoring)
                       ? 'error'
                       : 'primary'
                   }
-                fullWidth
+                  fullWidth
                   onClick={() => runScript(script.id)}
                   disabled={loading !== null || (!webcamServerActive && 
                     !(script.id === 1 && postureMonitoring) && 
@@ -1206,7 +1230,7 @@ const ScriptRunner: React.FC = () => {
                     !(script.id === 3 && cvsMonitoring) &&
                     !(script.id === 4 && hydrationMonitoring)
                   )}
-                startIcon={
+                  startIcon={
                     loading === script.id ? (
                       <CircularProgress size={24} color="inherit" />
                     ) : (
@@ -1215,7 +1239,7 @@ const ScriptRunner: React.FC = () => {
                       (script.id === 3 && cvsMonitoring) ||
                       (script.id === 4 && hydrationMonitoring)
                       ? <StopIcon /> 
-                        : <PlayArrowIcon />
+                      : <PlayArrowIcon />
                     )
                   }
                 >
@@ -1232,11 +1256,11 @@ const ScriptRunner: React.FC = () => {
             </Card>
           </Grid>
         ))}
-            </Grid>
+      </Grid>
 
       {/* CVS Monitoring Dashboard */}
       {cvsMonitoring && (
-        <Paper sx={{ p: 3, mb: 3 }}>
+        <Paper sx={{ p: { xs: 2, sm: 3 }, mb: 3, mt: 3 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
             <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <VisibilityOffIcon color="info" /> Eye Strain Monitoring Dashboard
@@ -1247,11 +1271,11 @@ const ScriptRunner: React.FC = () => {
           </Box>
 
           <Collapse in={expandedCVS}>
-            <Grid container spacing={2}>
+            <Grid container spacing={3}>
               {/* Current Status */}
               <Grid item xs={12} md={6}>
                 <Card>
-                  <CardContent>
+                  <CardContent sx={{ p: 2 }}>
                     <Typography variant="h6" gutterBottom>
                       Current Status (Last 5 minutes)
                     </Typography>
@@ -1331,7 +1355,7 @@ const ScriptRunner: React.FC = () => {
               {/* Recent Alerts */}
               <Grid item xs={12} md={6}>
                 <Card>
-                  <CardContent>
+                  <CardContent sx={{ p: 2 }}>
                     <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <NotificationsActiveIcon color="warning" /> Recent Alerts
                     </Typography>
@@ -1366,7 +1390,7 @@ const ScriptRunner: React.FC = () => {
 
       {/* Posture Monitoring Dashboard */}
       {postureMonitoring && (
-        <Paper sx={{ p: 3, mb: 3 }}>
+        <Paper sx={{ p: { xs: 2, sm: 3 }, mb: 3 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
             <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <AccessibilityNewIcon color="primary" /> Posture Monitoring Dashboard
@@ -1377,11 +1401,11 @@ const ScriptRunner: React.FC = () => {
           </Box>
 
           <Collapse in={expandedPosture}>
-            <Grid container spacing={2}>
+            <Grid container spacing={3}>
               {/* Current Status */}
               <Grid item xs={12} md={6}>
                 <Card>
-                  <CardContent>
+                  <CardContent sx={{ p: 2 }}>
                     <Typography variant="h6" gutterBottom>
                       Current Status (Last 5 minutes)
                     </Typography>
@@ -1435,7 +1459,7 @@ const ScriptRunner: React.FC = () => {
               {/* Recent Alerts */}
               <Grid item xs={12} md={6}>
                 <Card>
-                  <CardContent>
+                  <CardContent sx={{ p: 2 }}>
                     <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <NotificationsActiveIcon color="warning" /> Recent Alerts
                     </Typography>
@@ -1470,7 +1494,7 @@ const ScriptRunner: React.FC = () => {
 
       {/* Stress Monitoring Dashboard */}
       {stressMonitoring && (
-        <Paper sx={{ p: 3, mb: 3 }}>
+        <Paper sx={{ p: { xs: 2, sm: 3 }, mb: 3 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
             <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <SentimentDissatisfiedIcon color="secondary" /> Stress Monitoring Dashboard
@@ -1481,11 +1505,11 @@ const ScriptRunner: React.FC = () => {
           </Box>
 
           <Collapse in={expandedStress}>
-            <Grid container spacing={2}>
+            <Grid container spacing={3}>
               {/* Current Status */}
               <Grid item xs={12} md={6}>
                 <Card>
-                  <CardContent>
+                  <CardContent sx={{ p: 2 }}>
                     <Typography variant="h6" gutterBottom>
                       Current Status (Last 5 minutes)
                     </Typography>
@@ -1552,7 +1576,7 @@ const ScriptRunner: React.FC = () => {
               {/* Recent Alerts */}
               <Grid item xs={12} md={6}>
                 <Card>
-                  <CardContent>
+                  <CardContent sx={{ p: 2 }}>
                     <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <NotificationsActiveIcon color="warning" /> Recent Alerts
                     </Typography>
