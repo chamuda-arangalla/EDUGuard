@@ -99,3 +99,28 @@ The application provides a set of utility functions for interacting with the dat
 - `updateData(path, data)`: Update data at a specific path
 - `deleteData(path)`: Delete data at a specific path
 - `queryData(path, child, value)`: Query data based on specific criteria 
+
+## CVS Detection Module
+
+### Fixed Issues
+
+The CVS detection module has been fixed to address two main issues:
+
+1. **OpenCV imshow Freezing**: 
+   - GUI display is now disabled by default to prevent freezing
+   - The module will run in headless mode automatically
+
+2. **Database Connection Issues**:
+   - Added retry logic for database operations (3 attempts)
+   - Improved error handling throughout the code
+   - Cleaned up unnecessary batch processing code
+
+### Running the Module
+
+To run the CVS detection module:
+
+```
+python backend/modelScrpits/cvs_detection.py [USER_ID] [PROGRESS_REPORT_ID]
+```
+
+You can set the `CVS_SIMULATE=true` environment variable to run in simulation mode without a webcam.
