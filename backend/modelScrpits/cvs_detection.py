@@ -46,30 +46,21 @@ EYE_LOSS_RESET_TIME = 2  # Time in seconds to reset blink count if eyes are lost
 NORMAL_BLINK_RATE_MIN = 17  # Minimum normal blink rate (per minute)
 NORMAL_BLINK_RATE_MAX = 20  # Maximum normal blink rate (per minute)
 
-# Default model path - will be overridden if specified
-MODEL_PATH = os.path.join(script_dir, "models", "eye_blink_model.h5")
+# Define paths relative to the script location
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(SCRIPT_DIR, 'models', 'eye_blink_model.h5')
+FACE_CASCADE_PATH = os.path.join(SCRIPT_DIR, 'models', 'haarcascade_frontalface_default.xml')
 
 # Try to load the eye blink detection model
 def load_blink_model():
-    """Load the eye blink detection model from various possible locations"""
+    """Load the eye blink detection model from the models directory"""
     model = None
     try:
-        # Try different possible model paths
-        model_paths = [
-            MODEL_PATH,
-            os.path.join(script_dir, "eye_blink_model.h5"),
-            os.path.join(backend_dir, "models", "eye_blink_model.h5"),
-            "C:\\Users\\chamu\\source\\repos\\EDUGuard_DesktopApp\\EDUGuard_DesktopApp\\PyFiles\\models\\eye_blink_model.h5"
-        ]
-        
-        for model_path in model_paths:
-            if os.path.exists(model_path):
-                logger.info(f"Loading eye blink detection model from: {model_path}")
-                model = tf.keras.models.load_model(model_path)
-                break
-        
-        if model is None:
-            logger.warning("Could not find eye blink detection model. Using Haar cascade method as fallback.")
+        if os.path.exists(MODEL_PATH):
+            logger.info(f"Loading eye blink detection model from: {MODEL_PATH}")
+            model = tf.keras.models.load_model(MODEL_PATH)
+        else:
+            logger.warning(f"Could not find eye blink detection model at {MODEL_PATH}. Using Haar cascade method as fallback.")
     except Exception as e:
         logger.error(f"Error loading eye blink model: {e}")
         logger.warning("Falling back to Haar cascade method")
@@ -133,7 +124,20 @@ def main():
         alert_manager = None
     
     # Load face cascade for face detection
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    try:
+        face_cascade = cv2.CascadeClassifier(FACE_CASCADE_PATH)
+        if face_cascade.empty():
+            # Fallback to OpenCV's built-in cascades
+            face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+            logger.info("Using OpenCV's built-in face cascade")
+        else:
+            logger.info(f"Face detector loaded from {FACE_CASCADE_PATH}")
+    except Exception as e:
+        logger.error(f"Error loading face detector: {e}")
+        # Fallback to OpenCV's built-in cascades
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        logger.info("Using OpenCV's built-in face cascade as fallback")
+        
     if face_cascade.empty():
         logger.error("Failed to load Haar cascade classifier")
         sys.exit(1)
@@ -309,7 +313,6 @@ def main():
                 # No GUI operations - just process frames silently
                 # Add a small sleep to prevent CPU overload
                 time.sleep(0.01)
-                
             except socket.error as e:
                 logger.error(f"Socket error: {e}")
                 # Try to reconnect
@@ -323,7 +326,7 @@ def main():
             except Exception as e:
                 logger.error(f"Error in main loop: {e}")
                 time.sleep(1)
-    
+                
     except KeyboardInterrupt:
         logger.info("CVS detection stopped by user")
     finally:
