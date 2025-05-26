@@ -840,8 +840,8 @@ export const reportsService = {
       const url = `/reports/hydration?timeframe=${timeframe}${params}&userId=${userId}`;
       console.log(`Fetching hydration history: ${url}`);
       
-      // Use extended timeout for report endpoints
-      const response = await api.get(url, { timeout: 60000 });
+      // Use extended timeout for report endpoints (2 minutes)
+      const response = await api.get(url, { timeout: 120000 });
       return response.data;
     } catch (error: any) {
       console.error('Get hydration history error:', error.response?.data || error.message);
@@ -869,12 +869,12 @@ export const reportsService = {
       const url = `/reports/summary?timeframe=${timeframe}&userId=${userId}`;
       console.log(`Fetching summary data: ${url}`);
       
-      // Use extended timeout for report endpoints
-      const response = await api.get(url, { timeout: 60000 });
+      // Use extended timeout for report endpoints (2 minutes)
+      const response = await api.get(url, { timeout: 120000 });
       return response.data;
     } catch (error: any) {
       console.error('Get summary data error:', error);
-      console.log('Request details:', error.config);
+      console.log('Request details:', error?.config);
       return {
         status: 'error',
         message: 'Failed to load summary data',

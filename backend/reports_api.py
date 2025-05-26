@@ -454,14 +454,25 @@ def process_hydration_data(data, timeframe, start_date=None, end_date=None):
     """Process hydration data for visualization"""
     # Return empty structure if no data is available
     if not data:
-        return {
+        logger.warning(f"No hydration data available for {timeframe} view, generating empty structure")
+        result = {
             'labels': [],
             'normal_lips_percentage': [],
             'dry_lips_percentage': [],
             'avg_dryness_score': []
         }
+        
+        # If we have timeframe info, generate appropriate empty labels
+        if start_date and end_date:
+            result['labels'] = generate_time_labels(timeframe, start_date, end_date)
+            result['normal_lips_percentage'] = [0] * len(result['labels'])
+            result['dry_lips_percentage'] = [0] * len(result['labels'])
+            result['avg_dryness_score'] = [0] * len(result['labels'])
+        
+        return result
     
     # Process actual data
+    logger.info(f"Processing {len(data)} hydration data points for {timeframe} view")
     result = {
         'labels': [],
         'normal_lips_percentage': [],
@@ -471,6 +482,10 @@ def process_hydration_data(data, timeframe, start_date=None, end_date=None):
     
     # Sort data by timestamp to ensure chronological order
     data.sort(key=lambda x: x.get('timestamp', 0))
+    
+    # Check if we have fallback data
+    has_fallback_data = any(entry.get('is_fallback', False) for entry in data)
+    has_sample_data = any(entry.get('is_sample', False) for entry in data)
     
     # Generate formatted labels and extract data
     for entry in data:
@@ -485,11 +500,22 @@ def process_hydration_data(data, timeframe, start_date=None, end_date=None):
         else:  # monthly
             label = date.strftime('%d %b')  # Day with month abbreviation
         
-        # Add data to result
+        # Add data to result, ensuring we have values
+        normal_percentage = entry.get('normal_lips_percentage', 0)
+        dry_percentage = entry.get('dry_lips_percentage', 0)
+        dryness_score = entry.get('avg_dryness_score', 0)
+        
+        # Ensure percentages add up to 100%
+        total = normal_percentage + dry_percentage
+        if total > 0 and total != 100:
+            factor = 100 / total
+            normal_percentage *= factor
+            dry_percentage *= factor
+        
         result['labels'].append(label)
-        result['normal_lips_percentage'].append(round(entry.get('normal_lips_percentage', 0), 1))
-        result['dry_lips_percentage'].append(round(entry.get('dry_lips_percentage', 0), 1))
-        result['avg_dryness_score'].append(round(entry.get('avg_dryness_score', 0), 2))
+        result['normal_lips_percentage'].append(round(normal_percentage, 1))
+        result['dry_lips_percentage'].append(round(dry_percentage, 1))
+        result['avg_dryness_score'].append(round(dryness_score, 2))
     
     # If we have no data but timeframe is specified, generate empty labels
     if not result['labels'] and start_date and end_date:
@@ -497,6 +523,8 @@ def process_hydration_data(data, timeframe, start_date=None, end_date=None):
         result['normal_lips_percentage'] = [0] * len(result['labels'])
         result['dry_lips_percentage'] = [0] * len(result['labels'])
         result['avg_dryness_score'] = [0] * len(result['labels'])
+    
+    logger.info(f"Processed hydration data with {len(result['labels'])} data points")
     
     return result
 
@@ -672,27 +700,31 @@ def get_hydration_summary(db_manager, start_date, end_date):
 
 def calculate_overall_health_score(summary):
     """Calculate an overall health score based on all monitoring data"""
-    # Weight each component
-    posture_weight = 0.25
-    stress_weight = 0.25
-    cvs_weight = 0.25
-    hydration_weight = 0.25
-    
-    # Calculate individual scores (higher is better)
-    posture_score = summary['posture']['good_posture_percentage']
-    stress_score = summary['stress']['low_stress_percentage']
-    cvs_score = summary['cvs']['normal_blink_percentage']
-    hydration_score = summary['hydration']['normal_lips_percentage']
-    
-    # Calculate weighted average
-    overall_score = (
-        posture_score * posture_weight +
-        stress_score * stress_weight +
-        cvs_score * cvs_weight +
-        hydration_score * hydration_weight
-    )
-    
-    return round(overall_score, 1)
+    try:
+        # Weight each component
+        posture_weight = 0.25
+        stress_weight = 0.25
+        cvs_weight = 0.25
+        hydration_weight = 0.25
+        
+        # Calculate individual scores with safe fallbacks (higher is better)
+        posture_score = summary.get('posture', {}).get('good_posture_percentage', 0)
+        stress_score = summary.get('stress', {}).get('low_stress_percentage', 0)
+        cvs_score = summary.get('cvs', {}).get('normal_blink_percentage', 0)
+        hydration_score = summary.get('hydration', {}).get('normal_lips_percentage', 0)
+        
+        # Calculate weighted average
+        overall_score = (
+            posture_score * posture_weight +
+            stress_score * stress_weight +
+            cvs_score * cvs_weight +
+            hydration_score * hydration_weight
+        )
+        
+        return round(overall_score, 1)
+    except Exception as e:
+        logger.error(f"Error calculating overall health score: {e}")
+        return 0  # Return 0 as a safe fallback
 
 # Sample data generators for development
 

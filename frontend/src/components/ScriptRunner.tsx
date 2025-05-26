@@ -112,6 +112,8 @@ interface HydrationData {
   } | null;
   minutes: number;
   user_id?: string | null;
+  is_fallback_data?: boolean;
+  is_sample_data?: boolean;
 }
 
 interface PostureAlert {
@@ -923,49 +925,33 @@ const ScriptRunner: React.FC = () => {
           console.log('Hydration data received:', dataResponse.data);
           setHydrationData(dataResponse.data);
           
-          // Check for dry lips percentage and trigger alert check if needed
-          if (dataResponse.data?.average?.dry_lips_percentage > 60) {
-            // Trigger alert check to generate alerts
-            await hydrationService.triggerAlertCheck();
-          }
-          
-          // Check for new alerts
-          const alertsResponse = await hydrationService.getRecentAlerts(10);
-          if (alertsResponse.status === 'success') {
-            const alerts = alertsResponse.data.alerts;
-            setHydrationAlerts(alerts);
+          // Verify we got valid data with an average
+          if (dataResponse.data && dataResponse.data.average && 
+              typeof dataResponse.data.average.normal_lips_percentage === 'number') {
+            setHydrationData(dataResponse.data);
             
-            // Show notification for new alerts
-            const recentAlert = alerts.find((alert: HydrationAlert) => 
-              !alert.read && new Date(alert.created_at).getTime() > Date.now() - 60000 // Last minute
-            );
-            
-            if (recentAlert) {
-              setNotification({
-                message: recentAlert.message,
-                type: 'warning'
-              });
+            // Check if we need to trigger an alert for initial data
+            if (dataResponse.data?.average?.dry_lips_percentage > 60) {
+              await hydrationService.triggerAlertCheck();
             }
-          }
-        }
-      } catch (error) {
-        console.error('Error polling hydration data:', error);
-      }
-    }, 30000);
-    
-    setHydrationPollingInterval(interval);
-    
-    // Get initial data immediately
-    setTimeout(async () => {
-      try {
-        const dataResponse = await hydrationService.getRecentData(5, true);
-        if (dataResponse.status === 'success') {
-          console.log('Initial hydration data received:', dataResponse.data);
-          setHydrationData(dataResponse.data);
-          
-          // Check if we need to trigger an alert for initial data
-          if (dataResponse.data?.average?.dry_lips_percentage > 60) {
-            await hydrationService.triggerAlertCheck();
+          } else {
+            console.warn('Invalid hydration data structure received:', dataResponse.data);
+            // Set default data if received data is invalid
+            setHydrationData({
+              predictions: [],
+              average: {
+                dry_lips_count: 0,
+                normal_lips_count: 1,
+                dry_lips_percentage: 0.0,
+                normal_lips_percentage: 100.0,
+                avg_dryness_score: 0.1,
+                total_samples: 1,
+                samples: 1
+              },
+              minutes: 5,
+              user_id: null,
+              is_fallback_data: true
+            });
           }
         } else {
           console.warn('Failed to get initial hydration data:', dataResponse);
@@ -982,27 +968,120 @@ const ScriptRunner: React.FC = () => {
               samples: 1
             },
             minutes: 5,
-            user_id: null
+            user_id: null,
+            is_fallback_data: true
           });
         }
         
-        const alertsResponse = await hydrationService.getRecentAlerts(10);
-        if (alertsResponse.status === 'success') {
-          setHydrationAlerts(alertsResponse.data.alerts);
+        try {
+          const alertsResponse = await hydrationService.getRecentAlerts(10);
+          if (alertsResponse.status === 'success') {
+            setHydrationAlerts(alertsResponse.data.alerts || []);
+            
+            // If we have any alerts that indicate dry lips > 60%, show notification
+            const dryLipsAlert = alertsResponse.data.alerts && alertsResponse.data.alerts.find((alert: HydrationAlert) => 
+              alert.data && alert.data.dry_lips_percentage > 60
+            );
+            
+            if (dryLipsAlert) {
+              setNotification({
+                message: dryLipsAlert.message || "Warning: High levels of lip dryness detected. Please stay hydrated!",
+                type: 'warning'
+              });
+            }
+          } else {
+            console.warn('Failed to get hydration alerts:', alertsResponse);
+            setHydrationAlerts([]);
+          }
+        } catch (alertError) {
+          console.error('Error getting hydration alerts:', alertError);
+          setHydrationAlerts([]);
+        }
+      } catch (error) {
+        console.error('Error polling hydration data:', error);
+      }
+    }, 30000);
+    
+    setHydrationPollingInterval(interval);
+    
+    // Get initial data immediately
+    setTimeout(async () => {
+      try {
+        const dataResponse = await hydrationService.getRecentData(5, true);
+        if (dataResponse.status === 'success') {
+          console.log('Initial hydration data received:', dataResponse.data);
           
-          // If we have any alerts that indicate dry lips > 60%, show notification
-          const dryLipsAlert = alertsResponse.data.alerts.find((alert: HydrationAlert) => 
-            alert.data && alert.data.dry_lips_percentage > 60
-          );
-          
-          if (dryLipsAlert) {
-            setNotification({
-              message: dryLipsAlert.message || "Warning: High levels of lip dryness detected. Please stay hydrated!",
-              type: 'warning'
+          // Verify we got valid data with an average
+          if (dataResponse.data && dataResponse.data.average && 
+              typeof dataResponse.data.average.normal_lips_percentage === 'number') {
+            setHydrationData(dataResponse.data);
+            
+            // Check if we need to trigger an alert for initial data
+            if (dataResponse.data?.average?.dry_lips_percentage > 60) {
+              await hydrationService.triggerAlertCheck();
+            }
+          } else {
+            console.warn('Invalid hydration data structure received:', dataResponse.data);
+            // Set default data if received data is invalid
+            setHydrationData({
+              predictions: [],
+              average: {
+                dry_lips_count: 0,
+                normal_lips_count: 1,
+                dry_lips_percentage: 0.0,
+                normal_lips_percentage: 100.0,
+                avg_dryness_score: 0.1,
+                total_samples: 1,
+                samples: 1
+              },
+              minutes: 5,
+              user_id: null,
+              is_fallback_data: true
             });
           }
         } else {
-          console.warn('Failed to get hydration alerts:', alertsResponse);
+          console.warn('Failed to get initial hydration data:', dataResponse);
+          // Set default data if none received
+          setHydrationData({
+            predictions: [],
+            average: {
+              dry_lips_count: 0,
+              normal_lips_count: 1,
+              dry_lips_percentage: 0.0,
+              normal_lips_percentage: 100.0,
+              avg_dryness_score: 0.1,
+              total_samples: 1,
+              samples: 1
+            },
+            minutes: 5,
+            user_id: null,
+            is_fallback_data: true
+          });
+        }
+        
+        try {
+          const alertsResponse = await hydrationService.getRecentAlerts(10);
+          if (alertsResponse.status === 'success') {
+            setHydrationAlerts(alertsResponse.data.alerts || []);
+            
+            // If we have any alerts that indicate dry lips > 60%, show notification
+            const dryLipsAlert = alertsResponse.data.alerts && alertsResponse.data.alerts.find((alert: HydrationAlert) => 
+              alert.data && alert.data.dry_lips_percentage > 60
+            );
+            
+            if (dryLipsAlert) {
+              setNotification({
+                message: dryLipsAlert.message || "Warning: High levels of lip dryness detected. Please stay hydrated!",
+                type: 'warning'
+              });
+            }
+          } else {
+            console.warn('Failed to get hydration alerts:', alertsResponse);
+            setHydrationAlerts([]);
+          }
+        } catch (alertError) {
+          console.error('Error getting hydration alerts:', alertError);
+          setHydrationAlerts([]);
         }
       } catch (error) {
         console.error('Error getting initial hydration data:', error);
@@ -1019,7 +1098,8 @@ const ScriptRunner: React.FC = () => {
             samples: 1
           },
           minutes: 5,
-          user_id: null
+          user_id: null,
+          is_fallback_data: true
         });
       }
     }, 3000);

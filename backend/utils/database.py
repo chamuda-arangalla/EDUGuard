@@ -3,7 +3,7 @@ import datetime
 import os
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Configure logger
 logger = logging.getLogger('EDUGuard.Database')
@@ -314,11 +314,20 @@ class DatabaseManager:
                 
                 # Filter to only include predictions within the time window
                 if query:
-                    recent_predictions = [
-                        {**prediction, 'id': key} 
-                        for key, prediction in query.items() 
-                        if prediction.get('timestamp', 0) >= cutoff_time
-                    ]
+                    recent_predictions = []
+                    for key, prediction in query.items():
+                        # Skip if prediction is not a dictionary
+                        if not isinstance(prediction, dict):
+                            logger.warning(f"Skipping non-dict prediction in {model_name}: {type(prediction)}")
+                            continue
+                            
+                        timestamp = prediction.get('timestamp', 0)
+                        if timestamp >= cutoff_time:
+                            # Add prediction ID to the object
+                            prediction_with_id = dict(prediction)
+                            prediction_with_id['id'] = key
+                            recent_predictions.append(prediction_with_id)
+                    
                     # Sort by timestamp (newest first)
                     recent_predictions.sort(key=lambda p: p.get('timestamp', 0), reverse=True)
                     logger.debug(f"[BOOK] Retrieved {len(recent_predictions)} {model_name} predictions from FIREBASE for user {self.user_id}")
@@ -360,10 +369,14 @@ class DatabaseManager:
         try:
             if model_name == 'posture':
                 # Calculate posture statistics
-                posture_values = [
-                    p.get('prediction', {}).get('posture', '') 
-                    for p in predictions
-                ]
+                posture_values = []
+                for p in predictions:
+                    # Skip if prediction is not properly structured
+                    if not isinstance(p.get('prediction'), dict):
+                        continue
+                    posture = p.get('prediction', {}).get('posture', '')
+                    if posture:
+                        posture_values.append(posture)
                 
                 if not posture_values:
                     return None
@@ -387,10 +400,14 @@ class DatabaseManager:
                 }
             elif model_name == 'stress':
                 # Calculate stress statistics
-                stress_values = [
-                    p.get('prediction', {}).get('stress_level', '') 
-                    for p in predictions
-                ]
+                stress_values = []
+                for p in predictions:
+                    # Skip if prediction is not properly structured
+                    if not isinstance(p.get('prediction'), dict):
+                        continue
+                    stress_level = p.get('prediction', {}).get('stress_level', '')
+                    if stress_level:
+                        stress_values.append(stress_level)
                 
                 if not stress_values:
                     return None
@@ -418,10 +435,14 @@ class DatabaseManager:
                 }
             elif model_name == 'cvs':
                 # Calculate eye blink statistics
-                blink_values = [
-                    p.get('prediction', {}).get('blink_count', 0) 
-                    for p in predictions
-                ]
+                blink_values = []
+                for p in predictions:
+                    # Skip if prediction is not properly structured
+                    if not isinstance(p.get('prediction'), dict):
+                        continue
+                    blink_count = p.get('prediction', {}).get('blink_count', 0)
+                    if isinstance(blink_count, (int, float)):
+                        blink_values.append(blink_count)
                 
                 if not blink_values:
                     return None
@@ -457,25 +478,46 @@ class DatabaseManager:
                 }
             elif model_name == 'hydration':
                 # Calculate hydration statistics
-                hydration_values = [
-                    p.get('prediction', {}).get('hydration_status', '') 
-                    for p in predictions
-                ]
+                hydration_values = []
+                dryness_scores = []
                 
-                if not hydration_values:
+                for p in predictions:
+                    # Skip if prediction is not properly structured
+                    if not isinstance(p.get('prediction'), dict):
+                        continue
+                    
+                    hydration_status = p.get('prediction', {}).get('hydration_status', '')
+                    if hydration_status:
+                        hydration_values.append(hydration_status)
+                    
+                    dryness_score = p.get('prediction', {}).get('dryness_score', None)
+                    if isinstance(dryness_score, (int, float)):
+                        dryness_scores.append(dryness_score)
+                
+                if not hydration_values and not dryness_scores:
                     return None
                 
-                # Count lip statuses
-                dry_count = sum(1 for status in hydration_values if status == 'Dry Lips')
-                normal_count = sum(1 for status in hydration_values if status == 'Normal Lips')
-                total_count = len(hydration_values)
+                # Default values in case we're missing data
+                dry_count = 0
+                normal_count = 0
+                total_count = 0
+                
+                # Count lip statuses if we have that data
+                if hydration_values:
+                    dry_count = sum(1 for status in hydration_values if status == 'Dry Lips')
+                    normal_count = sum(1 for status in hydration_values if status == 'Normal Lips')
+                    total_count = len(hydration_values)
                 
                 # Get average dryness score
-                dryness_scores = [
-                    p.get('prediction', {}).get('dryness_score', 0) 
-                    for p in predictions
-                ]
                 avg_dryness_score = sum(dryness_scores) / len(dryness_scores) if dryness_scores else 0
+                
+                # If we have no hydration status data but we have dryness scores,
+                # infer the status from the scores
+                if not hydration_values and dryness_scores:
+                    # Count lips as dry if dryness score > 0.5
+                    dry_count = sum(1 for score in dryness_scores if score >= 0.5)
+                    normal_count = len(dryness_scores) - dry_count
+                    total_count = len(dryness_scores)
                 
                 # Calculate percentages
                 dry_percentage = (dry_count / total_count) * 100 if total_count > 0 else 0
@@ -961,10 +1003,20 @@ class DatabaseManager:
                     # First try to get all data and filter in code (more reliable)
                     all_results = hydration_ref.get()
                     
+                    if all_results:
+                        logger.info(f"Raw Firebase hydration data found with {len(all_results)} entries")
+                    else:
+                        logger.warning(f"No raw Firebase hydration data found for user {self.user_id}")
+                    
                     # Convert to list of entries
                     data = []
                     if all_results:
                         for key, value in all_results.items():
+                            # Skip if value is not a dictionary or has unexpected format
+                            if not isinstance(value, dict):
+                                logger.warning(f"Skipping non-dict entry in hydration data: {type(value)}")
+                                continue
+                                
                             # Get timestamp for filtering
                             entry_timestamp = value.get('timestamp', 0)
                             
@@ -975,30 +1027,61 @@ class DatabaseManager:
                                 
                                 # Check for different data structures
                                 if 'prediction' in value:
-                                    if 'average' in value['prediction']:
-                                        # From average data
-                                        entry['normal_lips_percentage'] = value['prediction']['average'].get('normal_lips_percentage', 0)
-                                        entry['dry_lips_percentage'] = value['prediction']['average'].get('dry_lips_percentage', 0)
-                                        entry['avg_dryness_score'] = value['prediction']['average'].get('avg_dryness_score', 0)
-                                        entry['total_samples'] = value['prediction']['average'].get('total_samples', 0)
-                                    elif 'hydration_status' in value['prediction']:
-                                        # From direct prediction
-                                        hydration_status = value['prediction']['hydration_status']
-                                        normal = 100 if hydration_status == 'Normal Lips' else 0
-                                        dry = 100 if hydration_status == 'Dry Lips' else 0
-                                        dryness_score = value['prediction'].get('dryness_score', 0.5)
-                                        
-                                        entry['normal_lips_percentage'] = normal
-                                        entry['dry_lips_percentage'] = dry
-                                        entry['avg_dryness_score'] = dryness_score
-                                        entry['total_samples'] = 1
-                                    else:
+                                    prediction = value['prediction']
+                                    # Skip if prediction is not a dictionary
+                                    if not isinstance(prediction, dict):
+                                        logger.warning(f"Skipping entry with non-dict prediction: {type(prediction)}")
                                         continue
-                                else:
-                                    continue
+                                        
+                                    if 'average' in prediction:
+                                        average = prediction['average']
+                                        # Skip if average is not a dictionary
+                                        if not isinstance(average, dict):
+                                            logger.warning(f"Skipping entry with non-dict average: {type(average)}")
+                                            continue
+                                            
+                                            # From average data
+                                            entry['normal_lips_percentage'] = average.get('normal_lips_percentage', 0)
+                                            entry['dry_lips_percentage'] = average.get('dry_lips_percentage', 0)
+                                            entry['avg_dryness_score'] = average.get('avg_dryness_score', 0)
+                                            entry['total_samples'] = average.get('total_samples', 0)
+                                        elif 'hydration_status' in prediction:
+                                            # From direct prediction
+                                            hydration_status = prediction['hydration_status']
+                                            normal = 100 if hydration_status == 'Normal Lips' else 0
+                                            dry = 100 if hydration_status == 'Dry Lips' else 0
+                                            dryness_score = prediction.get('dryness_score', 0.5)
+                                            
+                                            entry['normal_lips_percentage'] = normal
+                                            entry['dry_lips_percentage'] = dry
+                                            entry['avg_dryness_score'] = dryness_score
+                                            entry['total_samples'] = 1
+                                        else:
+                                            # Try to extract any hydration-related data we can find
+                                            if 'dryness_score' in prediction:
+                                                dryness_score = prediction.get('dryness_score', 0.5)
+                                                # Determine status based on score threshold
+                                                normal = 100 if dryness_score < 0.5 else 0
+                                                dry = 100 if dryness_score >= 0.5 else 0
+                                                
+                                                entry['normal_lips_percentage'] = normal
+                                                entry['dry_lips_percentage'] = dry
+                                                entry['avg_dryness_score'] = dryness_score
+                                                entry['total_samples'] = 1
+                                            else:
+                                                # Skip entries with insufficient data
+                                                logger.debug(f"Skipping hydration entry with insufficient data")
+                                                continue
+                                    else:
+                                        # Skip entries without prediction data
+                                        logger.debug(f"Skipping hydration entry without prediction data")
+                                        continue
                                     
-                                # Add to result list
-                                data.append(entry)
+                                    # Add to result list
+                                    data.append(entry)
+                    
+                    # Log the data we've collected
+                    logger.info(f"Retrieved {len(data)} raw hydration entries for time range")
                     
                     # Group by timeframe (hourly for daily, daily for weekly, etc.)
                     # This helps when we have too many data points
@@ -1006,11 +1089,13 @@ class DatabaseManager:
                     
                     logger.info(f"Retrieved {len(data)} raw hydration entries, grouped into {len(grouped_data)} entries")
                     return grouped_data
+                    
                 except Exception as e:
                     logger.error(f"Firebase error fetching hydration data: {e}")
+                    logger.error(f"Error details: {str(e)}")
                     return []
             else:
-                # Return empty array instead of sample data
+                # Return empty array
                 logger.warning(f"Firebase not available. Returning empty hydration data for date range {start_date} to {end_date}")
                 return []
         except Exception as e:

@@ -1,13 +1,3 @@
-"""
-EDUGuard Backend Main Entry Point
-
-This module serves as the central entry point for the EDUGuard backend application,
-providing a clean, organized structure for all monitoring services.
-
-Usage:
-    python main.py [--debug] [--port PORT] [--host HOST]
-"""
-
 import os
 import sys
 import argparse

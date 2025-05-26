@@ -286,6 +286,14 @@ const Reports: React.FC = () => {
   const isDataEmpty = (data: any) => {
     if (!data) return true;
     
+    // If it's summary data, check monitoring durations
+    if (data.posture && data.stress && data.cvs && data.hydration) {
+      return data.posture.monitoring_duration === 0 && 
+             data.stress.monitoring_duration === 0 && 
+             data.cvs.monitoring_duration === 0 && 
+             data.hydration.monitoring_duration === 0;
+    }
+    
     // Check if labels array exists and is empty
     if (!data.labels || !Array.isArray(data.labels) || data.labels.length === 0) return true;
     
@@ -982,16 +990,56 @@ const Reports: React.FC = () => {
       return <EmptyDataState monitoringType="Hydration" />;
     }
     
-    // Transform data for chart
-    const chartData = hydrationData.labels.map((label: string, index: number) => ({
+    // Ensure we have the required data arrays
+    const normalLipsData = hydrationData.normal_lips_percentage || [];
+    const dryLipsData = hydrationData.dry_lips_percentage || [];
+    const dryScoreData = hydrationData.avg_dryness_score || [];
+    const labels = hydrationData.labels || [];
+    
+    // Log data for debugging
+    console.log('Hydration data:', {
+      labels: labels.length,
+      normalLips: normalLipsData.length,
+      dryLips: dryLipsData.length,
+      dryScore: dryScoreData.length,
+      isFallback: hydrationData.is_fallback_data,
+      isSample: hydrationData.is_sample_data
+    });
+    
+    // Check if we're using fallback data
+    const usingFallbackData = hydrationData.is_fallback_data || hydrationData.is_sample_data;
+    
+    // Transform data for chart - ensure all arrays have equal length
+    const maxLength = Math.max(labels.length, normalLipsData.length, dryLipsData.length, dryScoreData.length);
+    
+    const chartData = labels.map((label: string, index: number) => ({
       name: label,
-      normalLips: hydrationData.normal_lips_percentage[index] || 0,
-      dryLips: hydrationData.dry_lips_percentage[index] || 0,
-      dryScore: hydrationData.avg_dryness_score[index] || 0
+      normalLips: index < normalLipsData.length ? normalLipsData[index] : 0,
+      dryLips: index < dryLipsData.length ? dryLipsData[index] : 0,
+      dryScore: index < dryScoreData.length ? dryScoreData[index] : 0
     }));
+    
+    // Calculate averages safely
+    const getAverage = (arr: number[]) => {
+      if (!arr || arr.length === 0) return 0;
+      const sum = arr.reduce((total, val) => total + (isNaN(val) ? 0 : val), 0);
+      return sum / arr.length;
+    };
+    
+    const avgNormalLips = getAverage(normalLipsData);
+    const avgDryLips = getAverage(dryLipsData);
+    const avgDryScore = getAverage(dryScoreData);
     
     return (
       <Grid container spacing={3}>
+        {usingFallbackData && (
+          <Grid item xs={12}>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Limited hydration data available. This visualization includes sample data points to help understand the metrics.
+            </Alert>
+          </Grid>
+        )}
+        
         {/* Hydration Trend Chart */}
         <Grid item xs={12}>
           <Card>
@@ -1011,14 +1059,14 @@ const Reports: React.FC = () => {
                     <XAxis dataKey="name" />
                     <YAxis yAxisId="left" unit="%" />
                     <YAxis yAxisId="right" orientation="right" domain={[0, 1]} />
-                    <Tooltip formatter={(value: any, name: any) => {
+                    <Tooltip formatter={(value: any, name: string) => {
                       if (name === 'dryScore') {
                         return [
                           typeof value === 'number' ? `${value.toFixed(2)}` : `${String(value)}`,
                           'Dryness Score'
                         ];
                       }
-                      return [`${value}%`, name];
+                      return [`${value}%`, name === 'normalLips' ? 'Normal Hydration' : 'Dry Lips'];
                     }} />
                     <Legend />
                     <Area 
@@ -1064,14 +1112,8 @@ const Reports: React.FC = () => {
                   <PieChart>
                     <Pie
                       data={[
-                        { name: 'Normal Hydration', value: hydrationData.normal_lips_percentage ? 
-                          hydrationData.normal_lips_percentage.reduce((a: number, b: number) => a + b, 0) / 
-                          hydrationData.normal_lips_percentage.length : 0 
-                        },
-                        { name: 'Dry Lips', value: hydrationData.dry_lips_percentage ? 
-                          hydrationData.dry_lips_percentage.reduce((a: number, b: number) => a + b, 0) / 
-                          hydrationData.dry_lips_percentage.length : 0 
-                        }
+                        { name: 'Normal Hydration', value: avgNormalLips },
+                        { name: 'Dry Lips', value: avgDryLips }
                       ]}
                       cx="50%"
                       cy="50%"
@@ -1103,19 +1145,13 @@ const Reports: React.FC = () => {
               <Typography variant="h6" gutterBottom>Hydration Statistics</Typography>
               <Box sx={{ p: 2 }}>
                 <Typography variant="body1" gutterBottom>
-                  <strong>Average Dryness Score:</strong> {hydrationData.avg_dryness_score ? 
-                    (hydrationData.avg_dryness_score.reduce((a: number, b: number) => a + b, 0) / 
-                     hydrationData.avg_dryness_score.length).toFixed(2) : 0}
+                  <strong>Average Dryness Score:</strong> {avgDryScore.toFixed(2)}
                 </Typography>
                 <Typography variant="body1" gutterBottom>
-                  <strong>Normal Hydration:</strong> {hydrationData.normal_lips_percentage ? 
-                    (hydrationData.normal_lips_percentage.reduce((a: number, b: number) => a + b, 0) / 
-                     hydrationData.normal_lips_percentage.length).toFixed(1) : 0}%
+                  <strong>Normal Hydration:</strong> {avgNormalLips.toFixed(1)}%
                 </Typography>
                 <Typography variant="body1" gutterBottom>
-                  <strong>Dry Lips:</strong> {hydrationData.dry_lips_percentage ? 
-                    (hydrationData.dry_lips_percentage.reduce((a: number, b: number) => a + b, 0) / 
-                     hydrationData.dry_lips_percentage.length).toFixed(1) : 0}%
+                  <strong>Dry Lips:</strong> {avgDryLips.toFixed(1)}%
                 </Typography>
                 
                 <Box sx={{ mt: 3 }}>
@@ -1123,9 +1159,7 @@ const Reports: React.FC = () => {
                     Recommendations:
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {hydrationData.dry_lips_percentage && 
-                    (hydrationData.dry_lips_percentage.reduce((a: number, b: number) => a + b, 0) / 
-                    hydrationData.dry_lips_percentage.length) > 30 ? (
+                    {avgDryLips > 30 ? (
                       "Your hydration levels appear to be low. Remember to drink water regularly throughout the day. Aim for at least 8 glasses of water daily."
                     ) : (
                       "Your hydration levels are good. Continue drinking water regularly to maintain proper hydration."
