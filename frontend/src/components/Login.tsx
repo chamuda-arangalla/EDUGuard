@@ -128,7 +128,13 @@ const Login: React.FC = () => {
   };
 
   return (
-    <Container component="main" maxWidth="lg" sx={{ height: '100vh', display: 'flex', alignItems: 'center' }}>
+    <Container component="main" maxWidth="lg" sx={{ 
+      minHeight: '100vh', 
+      display: 'flex', 
+      flexDirection: 'column',
+      justifyContent: 'center',
+      py: { xs: 4, md: 8 }
+    }}>
       {/* Success messages with improved visibility */}
       <Snackbar
         open={registrationSuccess}
@@ -162,132 +168,190 @@ const Login: React.FC = () => {
         </MuiAlert>
       </Snackbar>
       
-      <Grid container spacing={0} sx={{ height: '70vh' }}>
+      <Grid container spacing={0} sx={{ 
+        minHeight: { xs: 'auto', md: '600px' },
+        boxShadow: { xs: 0, md: 3 },
+        borderRadius: { xs: 0, md: 4 },
+        overflow: 'hidden'
+      }}>
         {/* Left side - Login form */}
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12} md={6} sx={{ 
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          bgcolor: 'background.paper'
+        }}>
           <Box
             sx={{
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              p: 4,
+              width: '100%',
+              maxWidth: { xs: '90%', sm: '450px' },
+              py: { xs: 4, md: 6 },
+              px: { xs: 3, md: 4 }
             }}
           >
-            <Paper elevation={3} sx={{ p: 4, width: '100%', maxWidth: 450, borderRadius: 4 }}>
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3 }}>
-                <Avatar sx={{ m: 1, bgcolor: 'primary.main' }}>
-                  <LockOutlinedIcon />
-                </Avatar>
-                <Typography component="h1" variant="h5" fontWeight="bold">
-                  Sign in to EDUGuard
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              mb: 4 
+            }}>
+              <Avatar sx={{ 
+                m: 1, 
+                bgcolor: 'primary.main',
+                width: 56,
+                height: 56
+              }}>
+                <LockOutlinedIcon fontSize="large" />
+              </Avatar>
+              <Typography component="h1" variant="h5" fontWeight="bold" textAlign="center">
+                Sign in to EDUGuard
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }} textAlign="center">
+                Enter your credentials to access your account
+              </Typography>
+            </Box>
+              
+            {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+            
+            {debugInfo && process.env.NODE_ENV !== 'production' && (
+              <Alert severity="info" sx={{ mb: 3, overflowX: 'auto' }}>
+                <Typography variant="caption" component="pre" sx={{ whiteSpace: 'pre-wrap', fontSize: '0.7rem' }}>
+                  {debugInfo}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                  Enter your credentials to access your account
-                </Typography>
-              </Box>
-              
-              {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
-              
-              {debugInfo && process.env.NODE_ENV !== 'production' && (
-                <Alert severity="info" sx={{ mb: 3, overflowX: 'auto' }}>
-                  <Typography variant="caption" component="pre" sx={{ whiteSpace: 'pre-wrap', fontSize: '0.7rem' }}>
-                    {debugInfo}
-                  </Typography>
-                </Alert>
-              )}
-              
-              <Box component="form" onSubmit={handleSubmit}>
-                <TextField
-                  margin="normal"
-                  required
-                  fullWidth
-                  id="email"
-                  label="Email Address"
-                  name="email"
-                  autoComplete="email"
-                  autoFocus
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <EmailIcon color="action" />
-                      </InputAdornment>
-                    ),
+              </Alert>
+            )}
+            
+            <Box component="form" onSubmit={handleSubmit}>
+              <TextField
+                margin="normal"
+                required
+                fullWidth
+                id="email"
+                label="Email Address"
+                name="email"
+                autoComplete="email"
+                autoFocus
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <EmailIcon color="action" />
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{ mb: 2 }}
+              />
+              <TextField
+                margin="normal"
+                required
+                fullWidth
+                name="password"
+                label="Password"
+                type={showPassword ? "text" : "password"}
+                id="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <LockIcon color="action" />
+                    </InputAdornment>
+                  ),
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        aria-label="toggle password visibility"
+                        onClick={handleTogglePassword}
+                        edge="end"
+                      >
+                        {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{ mb: 1 }}
+              />
+              <Button
+                type="submit"
+                fullWidth
+                variant="contained"
+                sx={{ 
+                  mt: 4, 
+                  mb: 3, 
+                  py: 1.5,
+                  borderRadius: 2,
+                  fontSize: '1rem',
+                  fontWeight: 'medium'
+                }}
+                disabled={loading}
+              >
+                {loading ? 'Signing in...' : 'Sign In'}
+              </Button>
+              <Box sx={{ textAlign: 'center' }}>
+                <Link 
+                  component={RouterLink} 
+                  to="/register" 
+                  variant="body2" 
+                  sx={{ 
+                    color: 'primary.main',
+                    textDecoration: 'none',
+                    '&:hover': {
+                      textDecoration: 'underline'
+                    }
                   }}
-                />
-                <TextField
-                  margin="normal"
-                  required
-                  fullWidth
-                  name="password"
-                  label="Password"
-                  type={showPassword ? "text" : "password"}
-                  id="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <LockIcon color="action" />
-                      </InputAdornment>
-                    ),
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton
-                          aria-label="toggle password visibility"
-                          onClick={handleTogglePassword}
-                          edge="end"
-                        >
-                          {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }}
-                />
-                <Button
-                  type="submit"
-                  fullWidth
-                  variant="contained"
-                  sx={{ mt: 3, mb: 2, py: 1.5 }}
-                  disabled={loading}
                 >
-                  {loading ? 'Signing in...' : 'Sign In'}
-                </Button>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Link component={RouterLink} to="/register" variant="body2" sx={{ color: 'primary.main' }}>
-                    {"Don't have an account? Sign Up"}
-                  </Link>
-                </Box>
+                  {"Don't have an account? Sign Up"}
+                </Link>
               </Box>
-            </Paper>
+            </Box>
           </Box>
         </Grid>
         
         {/* Right side - Welcome graphic */}
-        <Grid item xs={12} md={6} sx={{ display: { xs: 'none', md: 'block' } }}>
+        <Grid item xs={12} md={6} sx={{ 
+          display: { xs: 'none', md: 'flex' },
+          bgcolor: 'primary.main'
+        }}>
           <Box
             sx={{
+              width: '100%',
               height: '100%',
-              bgcolor: 'primary.light',
-              borderRadius: 4,
-              p: 5,
+              p: { md: 4, lg: 5 },
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'center',
+              alignItems: 'center',
+              textAlign: 'center'
             }}
           >
-            <Typography variant="h3" component="h2" sx={{ color: 'white', fontWeight: 'bold', mb: 2 }}>
+            <Typography variant="h3" component="h2" sx={{ 
+              color: 'white', 
+              fontWeight: 'bold', 
+              mb: 2,
+              fontSize: { md: '2.2rem', lg: '2.5rem' }
+            }}>
               Welcome to EDUGuard
             </Typography>
-            <Typography variant="h6" sx={{ color: 'rgba(255, 255, 255, 0.9)', mb: 3 }}>
+            <Typography variant="h6" sx={{ 
+              color: 'rgba(255, 255, 255, 0.9)', 
+              mb: 4,
+              maxWidth: '90%'
+            }}>
               The ultimate desktop application for student focus monitoring
             </Typography>
-            <img src={Logo} alt="Logo" style={{ width: '100%', height: 'auto' }} />
-            <Typography variant="body1" sx={{ color: 'rgba(255, 255, 255, 0.8)', mt: 3 }}>
+            <Box sx={{ 
+              width: '80%', 
+              maxWidth: '400px',
+              mb: 4 
+            }}>
+              <img src={Logo} alt="Logo" style={{ width: '100%', height: 'auto' }} />
+            </Box>
+            <Typography variant="body1" sx={{ 
+              color: 'rgba(255, 255, 255, 0.8)', 
+              maxWidth: '90%'
+            }}>
               EDUGuard helps students maintain focus during study sessions using advanced machine learning techniques.
             </Typography>
           </Box>
@@ -297,4 +361,4 @@ const Login: React.FC = () => {
   );
 };
 
-export default Login; 
+export default Login;
