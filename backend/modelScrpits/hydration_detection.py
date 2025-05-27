@@ -225,9 +225,13 @@ def main():
                 while len(data) < struct.calcsize("Q"):
                     packet = client_socket.recv(4 * 1024)
                     if not packet:
-                        logger.error("No data received from webcam server")
-                        break
+                        logger.error("No data received from webcam server, retrying...")
+                        time.sleep(1)
+                        continue
                     data += packet
+        
+                if len(data) < struct.calcsize("Q"):
+                    continue
         
                 packed_msg_size = data[:struct.calcsize("Q")]
                 data = data[struct.calcsize("Q"):]
