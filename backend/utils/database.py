@@ -260,6 +260,72 @@ class DatabaseManager:
             logger.error(f"Error saving alert: {e}")
             return None
     
+    def save_monitoring_summary(self, monitoring_type, summary_data, timestamp=None):
+        """Save a monitoring summary to the database.
+        
+        Args:
+            monitoring_type (str): The type of monitoring (e.g., 'hydration', 'posture').
+            summary_data (dict): The summary data to store.
+            timestamp (int, optional): Unix timestamp. Defaults to current time.
+        
+        Returns:
+            str: The key of the saved summary.
+        """
+        if timestamp is None:
+            timestamp = int(time.time() * 1000)  # milliseconds since epoch
+            
+        data = {
+            'type': monitoring_type,
+            'summary': summary_data,
+            'timestamp': timestamp,
+            'created_at': datetime.now().isoformat()
+        }
+        
+        try:
+            if self.db_type == 'firebase':
+                # Push data to a new summaries path: summaries/{user_id}/{monitoring_type}
+                from firebase_admin import db
+                summaries_ref = db.reference(f'summaries/{self.user_id}/{monitoring_type}')
+                push_result = summaries_ref.push()
+                key = push_result.key
+                summaries_ref.child(key).set(data)
+                
+                # Also update the latest summary
+                self.user_status_ref.child('latest_summaries').child(monitoring_type).set({
+                    **data,
+                    'summary_id': key
+                })
+                
+                logger.info(f"[SAVED TO FIREBASE] {monitoring_type} monitoring summary for user {self.user_id}")
+                return key
+            else:
+                # Local DB operation
+                if 'summaries' not in self.local_db:
+                    self.local_db['summaries'] = {}
+                
+                if monitoring_type not in self.local_db['summaries']:
+                    self.local_db['summaries'][monitoring_type] = {}
+                
+                # Generate a simple key
+                key = f"{int(time.time())}-{id(data)}"
+                self.local_db['summaries'][monitoring_type][key] = data
+                
+                # Update latest summary
+                if 'latest_summaries' not in self.local_db['user_status']:
+                    self.local_db['user_status']['latest_summaries'] = {}
+                
+                self.local_db['user_status']['latest_summaries'][monitoring_type] = {
+                    **data,
+                    'summary_id': key
+                }
+                
+                logger.warning(f"[SAVED TO LOCAL DB] {monitoring_type} monitoring summary for user {self.user_id}")
+                return key
+                
+        except Exception as e:
+            logger.error(f"Error saving monitoring summary: {e}")
+            return None
+    
     def get_recent_alerts(self, limit=20):
         """Get recent alerts for the user.
         

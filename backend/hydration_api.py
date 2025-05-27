@@ -271,17 +271,50 @@ def get_recent_hydration_data():
         predictions = db_manager.get_recent_predictions('hydration', minutes=minutes)
         
         # Get average if requested
-        average = None
+        avg_data = None
         if include_average:
-            average = db_manager.calculate_prediction_average('hydration', minutes=minutes)
+            raw_average = db_manager.calculate_prediction_average('hydration', minutes=minutes)
+            
+            # Check if we have data and format it according to frontend expectations
+            if raw_average and isinstance(raw_average, dict):
+                # Get values or provide defaults
+                dry_percentage = raw_average.get('dry_lips_percentage', 0)
+                normal_percentage = raw_average.get('normal_lips_percentage', 100)
+                total_samples = raw_average.get('total_samples', 0)
+                
+                # Calculate count values based on percentages (if available)
+                dry_count = int(dry_percentage * total_samples / 100) if total_samples > 0 else 0
+                normal_count = int(normal_percentage * total_samples / 100) if total_samples > 0 else 1
+                
+                # Create the expected format
+                avg_data = {
+                    'dry_lips_count': dry_count,
+                    'normal_lips_count': normal_count,
+                    'dry_lips_percentage': dry_percentage,
+                    'normal_lips_percentage': normal_percentage,
+                    'avg_dryness_score': raw_average.get('avg_dryness_score', 0.1),
+                    'total_samples': total_samples,
+                    'samples': total_samples
+                }
+            else:
+                # Provide default values if no data available
+                avg_data = {
+                    'dry_lips_count': 0,
+                    'normal_lips_count': 1,
+                    'dry_lips_percentage': 0.0,
+                    'normal_lips_percentage': 100.0,
+                    'avg_dryness_score': 0.1,
+                    'total_samples': 0,
+                    'samples': 0
+                }
         
-        logger.debug(f"Retrieved {len(predictions)} predictions, average: {average}")
+        logger.debug(f"Retrieved {len(predictions)} predictions, average: {avg_data}")
         
         return jsonify({
             'status': 'success',
             'data': {
                 'predictions': predictions,
-                'average': average,
+                'average': avg_data,
                 'minutes': minutes,
                 'user_id': user_id
             }
@@ -366,15 +399,49 @@ def trigger_hydration_alert_check():
         alert_manager.check_hydration_alert()
         
         # Get the latest hydration data
-        average = db_manager.calculate_prediction_average('hydration', minutes=5)
+        raw_average = db_manager.calculate_prediction_average('hydration', minutes=5)
         
-        logger.debug(f"Hydration average: {average}")
+        # Format the average data in the expected structure
+        avg_data = None
+        if raw_average and isinstance(raw_average, dict):
+            # Get values or provide defaults
+            dry_percentage = raw_average.get('dry_lips_percentage', 0)
+            normal_percentage = raw_average.get('normal_lips_percentage', 100)
+            total_samples = raw_average.get('total_samples', 0)
+            
+            # Calculate count values based on percentages (if available)
+            dry_count = int(dry_percentage * total_samples / 100) if total_samples > 0 else 0
+            normal_count = int(normal_percentage * total_samples / 100) if total_samples > 0 else 1
+            
+            # Create the expected format
+            avg_data = {
+                'dry_lips_count': dry_count,
+                'normal_lips_count': normal_count,
+                'dry_lips_percentage': dry_percentage,
+                'normal_lips_percentage': normal_percentage,
+                'avg_dryness_score': raw_average.get('avg_dryness_score', 0.1),
+                'total_samples': total_samples,
+                'samples': total_samples
+            }
+        else:
+            # Provide default values if no data available
+            avg_data = {
+                'dry_lips_count': 0,
+                'normal_lips_count': 1,
+                'dry_lips_percentage': 0.0,
+                'normal_lips_percentage': 100.0,
+                'avg_dryness_score': 0.1,
+                'total_samples': 0,
+                'samples': 0
+            }
+        
+        logger.debug(f"Hydration average: {avg_data}")
         
         return jsonify({
             'status': 'success',
             'message': 'Alert check completed',
             'data': {
-                'hydration_average': average,
+                'hydration_average': avg_data,
                 'user_id': user_id
             }
         })

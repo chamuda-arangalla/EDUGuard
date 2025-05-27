@@ -61,6 +61,9 @@ TEXTURE_THRESHOLD = 30     # Used to normalize the texture score
 DRYNESS_THRESHOLD = 0.17   # If normalized score > 0.17, consider lips as dry
 CONNECTION_TIMEOUT = 10    # Socket connection timeout in seconds
 
+# Monitoring duration in seconds (2 minutes)
+MONITORING_DURATION = 120
+
 # -----------------------------------------------------------------------------
 # Setup Client Connection to Webcam Server
 # -----------------------------------------------------------------------------
@@ -194,20 +197,30 @@ def main():
         
         # Timer setup for data collection
         save_interval = 1    # Save lip dryness status every 1 second
-        batch_interval = 30  # Save the batch to the database every 30 seconds
         last_saved_time = time.time()
-        last_batch_time = time.time()
         lip_dryness_batch = []  # Store lip dryness data before saving
+        
+        # Start time to track the 2-minute duration
+        start_time = time.time()
         
         data = b""
         
         logger.info(f"Starting hydration monitoring for user: {USER_EMAIL}")
+        logger.info(f"Monitoring will run for {MONITORING_DURATION} seconds (2 minutes)")
         
         # Update user monitoring status
         db_manager.update_user_monitoring_status(True)
         
         while True:
             try:
+                # Check if we've exceeded the monitoring duration (2 minutes)
+                current_time = time.time()
+                elapsed_time = current_time - start_time
+                
+                if elapsed_time >= MONITORING_DURATION:
+                    logger.info(f"Monitoring duration of {MONITORING_DURATION} seconds reached")
+                    break
+                
                 # Receive frame size
                 while len(data) < struct.calcsize("Q"):
                     packet = client_socket.recv(4 * 1024)
@@ -273,9 +286,8 @@ def main():
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
         
                 # Store lip dryness status for batch saving
-                current_time = time.time()
                 if current_time - last_saved_time >= save_interval:
-                    # Save to database
+                    # Save to database immediately
                     prediction_data = {
                         'hydration_status': dryness_label,
                         'dryness_score': float(normalized_texture),
@@ -285,44 +297,67 @@ def main():
                     # Save prediction to database
                     db_manager.save_prediction('hydration', prediction_data)
                     
-                    # Save to batch for alert checking
+                    # Save to batch for statistics
                     lip_dryness_batch.append(dryness_label)
                     last_saved_time = current_time
-        
-                # Check for alerts every 30 seconds
-                if current_time - last_batch_time >= batch_interval:
-                    if lip_dryness_batch:
-                        # Calculate percentage of dry lips
-                        total_samples = len(lip_dryness_batch)
-                        dry_count = lip_dryness_batch.count("Dry Lips")
-                        dry_percentage = (dry_count / total_samples) * 100 if total_samples > 0 else 0
-                        
-                        # Check if we should trigger an alert (>60% dry lips)
-                        hydration_avg = db_manager.calculate_prediction_average('hydration', minutes=5)
-                        
-                        if hydration_avg and hydration_avg.get('dry_lips_percentage', 0) > 60:
-                            # Trigger hydration alert
-                            alert_message = f"Dehydration detected! Your lips appear dry {hydration_avg['dry_lips_percentage']:.1f}% of the time. Please drink some water."
-                            db_manager.save_alert(
-                                'hydration',
-                                alert_message,
-                                'warning',
-                                {
-                                    'dry_lips_percentage': hydration_avg['dry_lips_percentage'],
-                                    'normal_lips_percentage': hydration_avg['normal_lips_percentage'],
-                                    'total_samples': hydration_avg['total_samples']
-                                }
-                            )
-                            logger.info(f"Hydration alert triggered: {dry_percentage:.1f}% dry lips detected")
-                        
-                        # Clear batch after processing
-                        lip_dryness_batch = []
-                    last_batch_time = current_time
+                    
+                    # Log progress
+                    remaining_time = int(MONITORING_DURATION - elapsed_time)
+                    if remaining_time % 10 == 0:  # Log every 10 seconds
+                        logger.info(f"Hydration monitoring in progress: {elapsed_time:.0f}s elapsed, {remaining_time}s remaining")
+            
             except Exception as e:
                 logger.error(f"Error in frame processing loop: {e}")
                 logger.error(traceback.format_exc())
                 # Continue with the next frame
                 continue
+        
+        # After 2 minutes, calculate and save final statistics
+        if lip_dryness_batch:
+            # Calculate percentage of dry lips
+            total_samples = len(lip_dryness_batch)
+            dry_count = lip_dryness_batch.count("Dry Lips")
+            normal_count = lip_dryness_batch.count("Normal Lips")
+            dry_percentage = (dry_count / total_samples) * 100 if total_samples > 0 else 0
+            normal_percentage = (normal_count / total_samples) * 100 if total_samples > 0 else 0
+            
+            # Calculate average dryness score
+            avg_dryness = sum([1.0 if label == "Dry Lips" else 0.0 for label in lip_dryness_batch]) / total_samples if total_samples > 0 else 0.0
+            
+            # Save summary to database
+            summary_data = {
+                'dry_lips_count': dry_count,
+                'normal_lips_count': normal_count,
+                'dry_lips_percentage': dry_percentage,
+                'normal_lips_percentage': normal_percentage,
+                'avg_dryness_score': avg_dryness,
+                'total_samples': total_samples,
+                'timestamp': int(time.time() * 1000)
+            }
+            
+            # Save summary to database
+            db_manager.save_monitoring_summary('hydration', summary_data)
+            
+            # Check if we should trigger an alert (>60% dry lips)
+            if dry_percentage > 60:
+                # Trigger hydration alert
+                alert_message = f"Dehydration detected! Your lips appear dry {dry_percentage:.1f}% of the time. Please drink some water."
+                db_manager.save_alert(
+                    'hydration',
+                    alert_message,
+                    'warning',
+                    {
+                        'dry_lips_percentage': dry_percentage,
+                        'normal_lips_percentage': normal_percentage,
+                        'total_samples': total_samples,
+                        'threshold': 60
+                    }
+                )
+                logger.info(f"Hydration alert triggered: {dry_percentage:.1f}% dry lips detected")
+            
+            # Log final results
+            logger.info(f"Hydration monitoring completed: {total_samples} samples collected")
+            logger.info(f"Results: {dry_percentage:.1f}% dry lips, {normal_percentage:.1f}% normal lips")
     
     except KeyboardInterrupt:
         logger.info("Hydration monitoring stopped by user")
