@@ -144,7 +144,7 @@ class PostureMonitoringManager:
             process = subprocess.Popen([
                 sys.executable, posture_script,
                 user_id, progress_report_id
-            ], cwd=script_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            ], cwd=script_dir)
             
             # Store the process
             self.processes[user_id] = process
