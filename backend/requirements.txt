@@ -10,13 +10,20 @@ firebase-admin==5.0.3
 opencv-python==4.5.3.56
 numpy==1.21.2
 
+# Machine Learning
+scikit-learn==0.24.2
+tensorflow==2.6.0
+
+# Data Processing
+pandas==2.0.3
+python-dateutil>=2.8.0
+
+# Image Processing
+Pillow>=8.0.0
+
 # Utilities
 python-dotenv==0.19.0
 requests==2.26.0
-
-# ML dependencies (if needed)
-scikit-learn==0.24.2
-tensorflow==2.6.0
 
 # Additional utilities
 Pillow>=8.0.0
