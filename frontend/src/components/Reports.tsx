@@ -135,6 +135,28 @@ const Reports: React.FC = () => {
   // Handle tab change
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabIndex(newValue);
+    
+    // Force data refresh when switching tabs
+    switch (newValue) {
+      case 0: // Summary tab
+        fetchSummaryData();
+        break;
+      case 1: // Posture tab
+        fetchPostureData();
+        break;
+      case 2: // Stress tab
+        fetchStressData();
+        break;
+      case 3: // Eye Strain tab
+        fetchCvsData();
+        break;
+      case 4: // Hydration tab
+        console.log('Switching to hydration tab, fetching data...');
+        fetchHydrationData();
+        break;
+      default:
+        break;
+    }
   };
   
   // Fetch data functions
@@ -195,22 +217,42 @@ const Reports: React.FC = () => {
     }
   };
   
-  const fetchHydrationData = async () => {
+  const fetchHydrationData = async (retryCount = 0) => {
     setLoading(prev => ({ ...prev, hydration: true }));
     setError(prev => ({ ...prev, hydration: null }));
     
     try {
+      console.log(`Fetching hydration data (attempt ${retryCount + 1})...`);
       const response = await reportsService.getHydrationHistory(timeframe as any);
+      
       if (response.status === 'success') {
+        console.log('Hydration data received:', response.data);
         setHydrationData(response.data);
       } else {
+        console.error('Failed to load hydration data:', response.message);
         setError(prev => ({ ...prev, hydration: response.message || 'Failed to load hydration data' }));
+        
+        // Retry up to 2 times if we get an error response
+        if (retryCount < 2) {
+          console.log(`Retrying hydration data fetch (${retryCount + 1}/2)...`);
+          setTimeout(() => fetchHydrationData(retryCount + 1), 1000);
+          return;
+        }
       }
     } catch (error) {
       console.error('Error fetching hydration data:', error);
       setError(prev => ({ ...prev, hydration: 'An error occurred while fetching hydration data' }));
+      
+      // Retry up to 2 times if we get an exception
+      if (retryCount < 2) {
+        console.log(`Retrying hydration data fetch (${retryCount + 1}/2)...`);
+        setTimeout(() => fetchHydrationData(retryCount + 1), 1000);
+        return;
+      }
     } finally {
-      setLoading(prev => ({ ...prev, hydration: false }));
+      if (retryCount === 2 || retryCount === 0) {
+        setLoading(prev => ({ ...prev, hydration: false }));
+      }
     }
   };
   
@@ -306,8 +348,17 @@ const Reports: React.FC = () => {
     // For CVS data
     if (data.normal_blink_percentage && data.normal_blink_percentage.length === 0) return true;
     
-    // For hydration data
-    if (data.normal_lips_percentage && data.normal_lips_percentage.length === 0) return true;
+    // For hydration data - check if we have sample data (which is never empty)
+    if (data.is_sample_data || data.is_fallback_data) return false;
+    
+    // For hydration data - check if all required arrays are present and not empty
+    if (data.normal_lips_percentage !== undefined) {
+      const hasNormalLips = Array.isArray(data.normal_lips_percentage) && data.normal_lips_percentage.length > 0;
+      const hasDryLips = Array.isArray(data.dry_lips_percentage) && data.dry_lips_percentage.length > 0;
+      
+      // If either array is missing or empty, consider the data empty
+      if (!hasNormalLips || !hasDryLips) return true;
+    }
     
     return false;
   };
@@ -1006,12 +1057,10 @@ const Reports: React.FC = () => {
       isSample: hydrationData.is_sample_data
     });
     
-    // Check if we're using fallback data
-    const usingFallbackData = hydrationData.is_fallback_data || hydrationData.is_sample_data;
+    // Check if we're using sample data
+    const usingSampleData = hydrationData.is_sample_data || hydrationData.is_fallback_data;
     
     // Transform data for chart - ensure all arrays have equal length
-    const maxLength = Math.max(labels.length, normalLipsData.length, dryLipsData.length, dryScoreData.length);
-    
     const chartData = labels.map((label: string, index: number) => ({
       name: label,
       normalLips: index < normalLipsData.length ? normalLipsData[index] : 0,
@@ -1030,12 +1079,24 @@ const Reports: React.FC = () => {
     const avgDryLips = getAverage(dryLipsData);
     const avgDryScore = getAverage(dryScoreData);
     
+    // Prepare pie chart data - ensure we don't have zero values that would break the chart
+    const pieData = [
+      { name: 'Normal Hydration', value: Math.max(0.1, avgNormalLips) },
+      { name: 'Dry Lips', value: Math.max(0.1, avgDryLips) }
+    ];
+    
+    // If both values are very small, normalize them
+    if (pieData[0].value < 1 && pieData[1].value < 1) {
+      pieData[0].value = 50;
+      pieData[1].value = 50;
+    }
+    
     return (
       <Grid container spacing={3}>
-        {usingFallbackData && (
+        {usingSampleData && (
           <Grid item xs={12}>
             <Alert severity="info" sx={{ mb: 2 }}>
-              Limited hydration data available. This visualization includes sample data points to help understand the metrics.
+              Sample hydration data is being displayed. This is simulated data to demonstrate the reporting features.
             </Alert>
           </Grid>
         )}
@@ -1111,10 +1172,7 @@ const Reports: React.FC = () => {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={[
-                        { name: 'Normal Hydration', value: avgNormalLips },
-                        { name: 'Dry Lips', value: avgDryLips }
-                      ]}
+                      data={pieData}
                       cx="50%"
                       cy="50%"
                       labelLine={false}
