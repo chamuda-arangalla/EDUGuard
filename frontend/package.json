@@ -1,0 +1,77 @@
+{
+  "name": "eduguard-desktop",
+  "version": "1.0.0",
+  "description": "EDUGuard Desktop Application",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite --mode development",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "electron:dev": "vite --mode development",
+    "electron:build": "vite build && electron-builder",
+    "app": "cd .. && concurrently \"cd backend && python app.py\" \"cd frontend && npm run electron:dev\""
+  },
+  "dependencies": {
+    "@emotion/react": "^11.11.3",
+    "@emotion/styled": "^11.11.0",
+    "@firebase/database": "^1.0.18",
+    "@mui/icons-material": "^5.17.1",
+    "@mui/material": "^5.15.6",
+    "axios": "^1.9.0",
+    "firebase": "^10.14.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.0",
+    "react-webcam": "^7.2.0",
+    "recharts": "^2.15.3",
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.16",
+    "@types/react": "^18.2.48",
+    "@types/react-dom": "^18.2.18",
+    "@typescript-eslint/eslint-plugin": "^6.19.1",
+    "@typescript-eslint/parser": "^6.19.1",
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.9.1",
+    "eslint": "^8.56.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.5",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.12",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "build": {
+    "appId": "com.eduguard.desktop",
+    "productName": "EDUGuard",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.education"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "public/logo.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Education"
+    }
+  }
+}
