@@ -1,126 +1,41 @@
-# EDUGuard Desktop Application
+# Project Name - EduGuard
+# Group Number - 24-25J-134
+| Name with initials | Registration Number | Contact Phone Number | Email                 | Badge         |
+| :---               |     :---:           |          :---:       |         :---:         |       :---:   |
+| Arangalla C.M.A    | IT21211850          | 077 5351306         | it21211850@my.sliit.lk| ![visitor badge](https://custom-icon-badges.demolab.com/badge/⭐-Leader-red)     |
+| Sandeeptha P.K.T     | IT21312694          | 071 9871480          | it21312694@my.sliit.lk| ![visitor badge](https://custom-icon-badges.demolab.com/badge/⭐-Member-green)   |
+| Virukshi W.R.S       | IT21212840          | 076 9208328          | it21212840@my.sliit.lk| ![visitor badge](https://custom-icon-badges.demolab.com/badge/⭐-Member-green)   |
+| Polhengoda P.M.Y.Y.B | IT21263576          | 076 7801452          | it21263576@my.sliit.lk| ![visitor badge](https://custom-icon-badges.demolab.com/badge/⭐-Member-green)   |                     
 
-## Firebase Realtime Database Setup
 
-This application uses Firebase for authentication and the Realtime Database for data storage. Follow these steps to set up Firebase Realtime Database:
-
-1. Go to the [Firebase Console](https://console.firebase.google.com/)
-2. Select your project (eduguard-db)
-3. In the left sidebar, click on "Build" > "Realtime Database"
-4. Click "Create Database" if you haven't created one yet
-5. Choose the location closest to your users
-6. Start in test mode for development purposes (we'll update the security rules later)
-
-## Security Rules
-
-After setting up the database, update the security rules by going to the "Rules" tab in the Realtime Database section. Use the rules from the `database-rules.json` file provided in this repository. These rules ensure:
-
-- Users can only read and write their own data
-- Data structure is properly validated
-- Unauthorized access is prevented
-
-```json
-{
-  "rules": {
-    "users": {
-      "$uid": {
-        ".read": "$uid === auth.uid",
-        ".write": "$uid === auth.uid"
-        // Additional validation rules...
-      }
-    },
-    "notes": {
-      "$uid": {
-        ".read": "$uid === auth.uid",
-        ".write": "$uid === auth.uid"
-        // Additional validation rules...
-      }
-    }
-  }
-}
+# Brief Description of  The Research Problem -
+```
+Excessive digital screen use among students during and after the COVID-19 pandemic
+has led to significant health issues. With educational activities shifting entirely
+online, students experienced prolonged screen exposure and reduced physical activity,
+contributing to various health complications.The lack of movement, poor posture,
+and increased stress levels exacerbated these problems.Common health concerns include
+weakened bones and muscles,immune system issues, obesity, and cardiovascular problems. Additionally, 
+prolonged screen time has led to posture-related issues such as back and neck pain,
+as well as eye problems like Computer Vision Syndrome (CVS). The absence of effective monitoring
+and intervention has further increased the risk of long-term health consequences.
 ```
 
-## Application Features
-
-### User Profiles
-- View and edit your profile information
-- Data is stored in the Firebase Realtime Database
-- Updates in real-time
-
-### Notes Demo
-- Create and delete notes
-- Real-time synchronization between devices
-- Secure data access
-
-## Getting Started
-
-1. Install dependencies:
-   ```
-   cd frontend
-   npm install
-   ```
-
-2. Start the development server:
-   ```
-   npm run dev
-   ```
-
-3. Access the application features:
-   - Register a new user or log in
-   - Navigate to the Profile page to update your information
-   - Try the Database Test page to experiment with the notes functionality
-
-## Data Structure
-
-The application uses the following data structure in Firebase:
+# Brief Description of  The Research Solution -
+```
+To address these issues, this research aims to develop a system that utilizes image
+processing to monitor student activity. The system will track blinking rates, screen time,
+posture, and facial expressions to detect signs of stress. By analyzing these factors, the system
+will provide real-time reminders to encourage students to take breaks, stretch, or
+adjust their posture. This approach seeks to minimize health risks associated with excessive
+screen use and promote healthier study habits among students.
 
 ```
-- users
-  - $userId
-    - displayName: string
-    - bio: string
-    - phone: string
 
-- notes
-  - $userId
-    - $noteId
-      - text: string
-      - createdAt: number
-```
+# Compoent Diagram - 
 
-## API Reference
+<p align="center">
+   <img src ="https://github.com/user-attachments/assets/02643c2a-2e6a-4590-a759-be1b84d8acf5">
 
-The application provides a set of utility functions for interacting with the database:
+</p>
 
-- `createData(path, data)`: Create data at a specific path
-- `createDataWithId(path, data)`: Create data with an auto-generated ID
-- `readData(path)`: Read data from a specific path
-- `subscribeToData(path, callback)`: Subscribe to real-time updates
-- `updateData(path, data)`: Update data at a specific path
-- `deleteData(path)`: Delete data at a specific path
-- `queryData(path, child, value)`: Query data based on specific criteria 
-
-## CVS Detection Module
-
-### Fixed Issues
-
-The CVS detection module has been fixed to address two main issues:
-
-1. **OpenCV imshow Freezing**: 
-   - GUI display is now disabled by default to prevent freezing
-   - The module will run in headless mode automatically
-
-2. **Database Connection Issues**:
-   - Added retry logic for database operations (3 attempts)
-   - Improved error handling throughout the code
-   - Cleaned up unnecessary batch processing code
-
-### Running the Module
-
-To run the CVS detection module:
-
-```
-python backend/modelScrpits/cvs_detection.py [USER_ID] [PROGRESS_REPORT_ID]
-```
-
-You can set the `CVS_SIMULATE=true` environment variable to run in simulation mode without a webcam.
